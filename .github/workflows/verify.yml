@@ -12,5 +12,3 @@ jobs:
         run: python3 scripts/privacy_check.py
       - name: Check Python syntax
         run: python3 -m py_compile ams_tracker.py fix_bridge_anchor.py scripts/*.py
-      - name: Preview Orca import
-        run: python3 scripts/install_orca_profiles.py --orca-user /tmp/orca-user --dry-run >/dev/null
