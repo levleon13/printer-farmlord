@@ -1,0 +1,23 @@
+{
+  "bottom_shell_layers": "4",
+  "enable_arc_fitting": "0",
+  "from": "User",
+  "infill_anchor": "1000",
+  "inherits": "0.20mm Standard @BBL H2S",
+  "name": "0.20mm Standard @BBL H2S - SPIDER_TPU95",
+  "print_extruder_id": [
+    "1",
+    "1"
+  ],
+  "print_extruder_variant": [
+    "Direct Drive Standard",
+    "Direct Drive High Flow"
+  ],
+  "print_settings_id": "0.20mm Standard @BBL H2S - SPIDER_TPU95",
+  "skeleton_infill_density": "5%",
+  "skin_infill_density": "5%",
+  "sparse_infill_density": "5%",
+  "sparse_infill_pattern": "honeycomb",
+  "top_shell_thickness": "0",
+  "version": "2.7.0.2"
+}

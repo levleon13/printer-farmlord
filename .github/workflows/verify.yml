@@ -1,0 +1,16 @@
+name: Verify portable bundle
+on: [push, pull_request]
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check for identifying data
+        run: python3 scripts/privacy_check.py
+      - name: Check Python syntax
+        run: python3 -m py_compile ams_tracker.py fix_bridge_anchor.py scripts/*.py
+      - name: Preview Orca import
+        run: python3 scripts/install_orca_profiles.py --orca-user /tmp/orca-user --dry-run >/dev/null
