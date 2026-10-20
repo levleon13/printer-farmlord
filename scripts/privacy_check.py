@@ -38,10 +38,18 @@ def read(path, staged):
     return p.stdout.decode()
 
 
+def reviewed_image(path):
+    # README art and screenshots can't be text-scanned; they are checked by eye before they are added.
+    rel = path.relative_to(ROOT).as_posix()
+    return rel.startswith(("docs/img/", "docs/screenshots/")) and rel.endswith(".webp")
+
+
 def main():
     bad = []
     staged = "--staged" in sys.argv
     for path in files(staged):
+        if reviewed_image(path):
+            continue
         try:
             content = read(path, staged)
         except (OSError, UnicodeError, subprocess.CalledProcessError):

@@ -22,3 +22,7 @@ attention.json
 dry_requests.json
 last_ams_raw.json
 .DS_Store
+
+# Reviewed README art and screenshots (no private data)
+!docs/img/*.webp
+!docs/screenshots/*.webp

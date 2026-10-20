@@ -1,3 +1,15 @@
+<p align="center">
+  <img src="docs/img/banner.webp" alt="Printer Farmlord: one dashboard for a room full of Bambu printers" width="100%">
+</p>
+
+<p align="center">
+  <b><a href="https://levleon13.github.io/printer-farmlord/">Visual install guide</a></b> ·
+  <a href="#screenshots">Screenshots</a> ·
+  <a href="#install-on-an-android-phone">Install on Android</a> ·
+  <a href="#install-on-a-mac-or-linux">Mac or Linux</a> ·
+  <a href="https://github.com/levleon13/printer-farmlord/issues/new?template=problem.yml">Report a problem</a>
+</p>
+
 # Printer Farmlord
 
 A self-hosted dashboard for a room full of Bambu Lab printers.
@@ -10,6 +22,38 @@ toolhead, change filament, watch the cameras and track stock.
 
 Built for Bambu H2 series printers with AMS 2 Pro and AMS HT units. Other
 models that speak the same LAN protocol may work, but are untested.
+
+## Screenshots
+
+**The room at a glance.** Every printer with its live camera, status and AMS spools.
+
+<img src="docs/screenshots/room-overview.webp" alt="Room overview on a desktop screen: printer cards with live cameras, status and AMS slots" width="100%">
+
+**One printer up close.** Camera, temperatures, filament and drying, quick actions and recent activity.
+
+<img src="docs/screenshots/printer-desk.webp" alt="Printer detail page on a desktop screen: camera, temperatures, AMS slots and activity log" width="100%">
+
+**Filament management.** Spool stock with reorder warnings, and every AMS unit's drying state.
+
+<img src="docs/screenshots/filament-management.webp" alt="Filament management on a desktop screen: stock table and drying cards per AMS" width="100%">
+
+**On a tablet.** The same dashboard adapts to a narrow screen.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/screenshots/room-overview-tablet.webp" alt="Room overview on a tablet" width="100%"></td>
+    <td width="50%"><img src="docs/screenshots/filament-management-tablet.webp" alt="Filament management on a tablet" width="100%"></td>
+  </tr>
+</table>
+
+**Setup in the browser.** No terminal questions: add printers, test each one, set a password.
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/screenshots/setup-step1-phone.webp" alt="Setup page, step 1: adding printers with a test connection button" width="260"></td>
+    <td align="center"><img src="docs/screenshots/setup-step2-phone.webp" alt="Setup page, step 2: allowing other devices and setting a password" width="260"></td>
+  </tr>
+</table>
 
 ## What it does
 
@@ -34,111 +78,134 @@ a problem on one machine doesn't get lost among four.
 
 ## Requirements
 
-- Python 3.9 or newer
-- `ffmpeg` — only for camera feeds; everything else works without it
-- A host on the same network as the printers: macOS, Linux, or Android via
-  Termux. A spare phone works well and uses almost no power.
-- Each printer in **LAN Only / Developer Mode**, which exposes the local MQTT
-  interface this dashboard uses
+- Bambu printers with **LAN Only** and **Developer Mode** turned on
+- A host on the same network as the printers: a spare **Android phone** (recommended, uses almost no power), a Mac, or Linux
+- Python 3.9 or newer, and `ffmpeg` for the cameras (the Android install below gets both)
 
-## Install
+## Install on an Android phone
 
-First, on each printer's screen go to **Settings → Network** and turn on
-**LAN Only** and **Developer Mode**. Leave that screen open: setup asks for the
-printer's IP address, serial number and access code.
+A spare phone left in the print room makes a quiet server, and
+[Tailscale](https://tailscale.com) (free for personal use) lets you open the
+dashboard from anywhere without opening ports. About 10 minutes, once.
+The same steps as a web page: **[visual install guide](https://levleon13.github.io/printer-farmlord/)**.
 
-**Mac or Linux** (needs `git` and Python 3):
+<img src="docs/img/step-1.webp" align="right" width="300" alt="Printer network screen with LAN Only and Developer Mode on">
 
+### 1 · On each printer
+
+Open **Settings → Network**, switch on **LAN Only** and **Developer Mode**, and
+note the **IP address**, **serial number** and **access code**. Treat the
+access code like a password.
+
+<br clear="right">
+
+<img src="docs/img/step-2.webp" align="right" width="200" alt="Tailscale app connected on the server phone">
+
+### 2 · Server phone: Wi‑Fi and Tailscale
+
+Connect the phone to the **same Wi‑Fi as the printers** and leave it plugged
+in. Install **Tailscale** from the Play Store, sign in and switch it on. Note
+the phone's address (`100.x.y.z`) and device name.
+
+<br clear="right">
+
+<img src="docs/img/step-3.webp" align="right" width="200" alt="Android battery setting for Termux set to Unrestricted">
+
+### 3 · Install Termux, keep it awake
+
+Install **Termux** from [F‑Droid](https://f-droid.org/packages/com.termux/)
+(the Play Store build is outdated). In **Settings → Apps → Termux → Battery**
+choose **Unrestricted**, and do the same for Tailscale.
+
+<br clear="right">
+
+<img src="docs/img/step-4.webp" align="right" width="200" alt="Termux installing Printer Farmlord">
+
+### 4 · Paste one line
+
+Open Termux, paste this and press Enter. It takes about a minute.
+
+```sh
+pkg install -y python ffmpeg git && git clone https://github.com/levleon13/printer-farmlord.git && cd printer-farmlord && ./scripts/start.sh
 ```
+
+If anything fails, the error includes a **Report it** link with private details removed.
+
+<br clear="right">
+
+<img src="docs/img/step-5.webp" align="right" width="200" alt="Setup page: adding a printer and testing the connection">
+
+### 5 · Add your printers
+
+The setup page opens in the phone's browser by itself (otherwise open
+`http://localhost:8765/setup`). Enter each printer, tap **Test connection**,
+then **Add printer**.
+
+<br clear="right">
+
+<img src="docs/img/step-6.webp" align="right" width="200" alt="Setup page: allowing other devices and setting a password">
+
+### 6 · Allow other devices, set a password
+
+Tick **Let other devices on my network open it**, choose a password, and tap
+**Finish**. Without the tick, the dashboard only answers on the phone itself and
+Tailscale can't reach it.
+
+<br clear="right">
+
+<img src="docs/img/step-7.webp" align="right" width="300" alt="Laptop browser showing the dashboard over Tailscale">
+
+### 7 · Open it from anywhere
+
+On your own phone or laptop, sign in to the same Tailscale account and open
+`http://100.x.y.z:8765` (or `http://<device-name>:8765`). **Never forward port
+8765 on your router.**
+
+<br clear="right">
+
+<img src="docs/img/step-8.webp" align="right" width="200" alt="Dashboard starting by itself after a reboot">
+
+### 8 · Optional: start after a reboot
+
+Install **Termux:Boot**, open it once, then paste:
+
+```sh
+mkdir -p ~/.termux/boot && printf '#!/data/data/com.termux/files/usr/bin/bash\ncd ~/printer-farmlord && ./scripts/start.sh\n' > ~/.termux/boot/farmlord && chmod +x ~/.termux/boot/farmlord
+```
+
+<br clear="right">
+
+**Setting up from a laptop instead?** Start it with `AMS_SETUP_LAN=1 ./scripts/start.sh`
+and open `http://<phone-tailscale-ip>:8765/setup` from a laptop on the same
+Tailscale network. The setup page has no password until you finish, so only do
+this on a network you trust.
+
+## Install on a Mac or Linux
+
+Needs `git` and Python 3 (and `ffmpeg` for cameras):
+
+```sh
 git clone https://github.com/levleon13/printer-farmlord.git
 cd printer-farmlord && ./scripts/start.sh
 ```
 
-**Android:** install [Termux](https://f-droid.org/packages/com.termux/) (from
-F-Droid; the Play Store build is outdated), open it and paste:
-
-```
-pkg install -y python ffmpeg git && git clone https://github.com/levleon13/printer-farmlord.git && cd printer-farmlord && ./scripts/start.sh
-```
-
-The first run installs everything it needs (about a minute), then opens a
-**setup page in your browser** at http://localhost:8765/setup. There you add your
-printers (with a **Test connection** button for each), choose whether other
-devices may open the dashboard, and set a password if they may. Click
-**Finish** and the dashboard starts. On a headless machine with no browser, start
-it with `AMS_SETUP_LAN=1 ./scripts/start.sh` and open
-`http://<machine-ip>:8765/setup` from another device on the same network.
+The first run installs what it needs and opens the same setup page at
+http://localhost:8765/setup. On a machine without a browser, start it with
+`AMS_SETUP_LAN=1` and open `http://<machine-ip>:8765/setup` from another device.
+Prefer the terminal? `./scripts/install.sh` asks the same questions there.
 
 Your printer details are written only to `.runtime/config.json` (private to your
-user, gitignored) and never leave the machine. Prefer the terminal? Run
-`./scripts/install.sh` instead; it asks the same questions there.
-
-Add one printer, confirm it connects, and only then add the rest. A wrong
-access code looks the same as an unreachable printer, and it is much easier to
-tell them apart with a single machine configured.
+user, gitignored) and never leave the machine. Add one printer, confirm it
+connects, then add the rest: a wrong access code looks the same as an
+unreachable printer.
 
 ## Reaching it from other devices
 
-By default the dashboard listens on localhost only. To open it from a phone or
-another computer, tick **Let other devices open it** during setup and set a
-password. It then serves on your host's network address, port 8765. Your
-firewall may need to allow that port.
-
-The password is the only thing between your network and full control of the
-printers. Treat it accordingly, and **do not forward port 8765 to the
-internet**. To reach it from outside, use a private network such as
-[Tailscale](https://tailscale.com) and open `http://<host-tailscale-ip>:8765`.
-
-## Walkthrough: an old Android phone as the server, reached over Tailscale
-
-A spare Android phone left in the print room makes a quiet, low-power server.
-[Tailscale](https://tailscale.com) (free for personal use) lets you open the
-dashboard from anywhere without opening any ports.
-
-**On the phone that stays with the printers**
-
-1. Connect it to the same Wi-Fi as the printers, and plug it in.
-2. Install **Tailscale** from the Play Store, sign in and switch it on. Note
-   the phone's Tailscale address (`100.x.y.z`) and device name shown in the app.
-3. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/)
-   (the Play Store build is outdated).
-4. In Android settings, turn off battery optimisation for Termux and Tailscale.
-5. Open Termux and paste:
-
-   ```
-   pkg install -y python ffmpeg git && git clone https://github.com/levleon13/printer-farmlord.git && cd printer-farmlord && ./scripts/start.sh
-   ```
-
-6. After about a minute the setup page opens in the phone's browser (if it
-   doesn't, open `http://localhost:8765/setup` yourself):
-   - **Step 1:** add each printer, using **Test connection** to check it.
-   - **Step 2:** tick **Let other devices on my network open it** and choose a
-     password. Without this, the dashboard only answers on the phone itself and
-     Tailscale can't reach it.
-   - Click **Finish**.
-
-**On your own phone or laptop**
-
-Install Tailscale, sign in to the same Tailscale account, and open
-`http://100.x.y.z:8765` (or `http://<device-name>:8765`). Sign in with the
-password from step 2.
-
-**Start automatically after a reboot (optional)**
-
-Install **Termux:Boot**, open it once, then run this in Termux:
-
-```
-mkdir -p ~/.termux/boot && printf '#!/data/data/com.termux/files/usr/bin/bash\ncd ~/printer-farmlord && ./scripts/start.sh\n' > ~/.termux/boot/farmlord && chmod +x ~/.termux/boot/farmlord
-```
-
-`start.sh` keeps Termux awake on its own, so the dashboard keeps running with
-the screen off.
-
-**Rather set it up from a laptop?** Start it with
-`AMS_SETUP_LAN=1 ./scripts/start.sh` and open
-`http://<phone-tailscale-ip>:8765/setup` from a laptop on the same Tailscale
-network. The setup page has no password until you finish, so only do this on a
-network you trust.
+By default the dashboard listens on this machine only. Tick **Let other devices
+open it** during setup and set a password to serve it on your network, port
+8765. The password is the only thing between your network and full control of
+the printers, so **do not forward port 8765 to the internet**; use
+[Tailscale](https://tailscale.com) or another private network instead.
 
 ## Which addresses work
 
@@ -286,4 +353,6 @@ Nothing here is affiliated with or endorsed by Bambu Lab.
 | `scripts/connect_orca_remote.sh` | Optional SSH route to the printer LAN |
 | `.github/workflows/verify.yml` | CI: privacy and syntax checks |
 | `.github/ISSUE_TEMPLATE/problem.yml` | Form behind the "Report this problem" links |
+| `docs/index.html` | The visual install guide, served by GitHub Pages |
+| `docs/img/`, `docs/screenshots/` | README banner, install-step pictures and interface screenshots |
 | `AGENTS.md` | Orientation for a coding agent working on this repo |
