@@ -9,29 +9,42 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 PATTERNS = {
     "personal path": re.compile(r"/(?:Users|home)/[^/\s\"']+"),
-    "private IP": re.compile(r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b"),
+    "private IP": re.compile(r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|100\.(?:6[4-9]|[7-9]\d|1[01]\d|12[0-7])\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|192\.168\.\d{1,3}\.\d{1,3})\b"),
     "email": re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I),
     "account UUID": re.compile(r"\b[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}\b", re.I),
-    "possible printer serial": re.compile(r"\b[A-F0-9]{15,16}\b", re.I),
-    "credential assignment": re.compile(r'"(?:access_code|password|token)"\s*:\s*"(?!REPLACE_|\")')
+    # Bambu serials: 15-16 uppercase letters and digits, e.g. 01P00A...
+    "possible printer serial": re.compile(r"\b(?=[0-9A-Z]*\d)(?=[0-9A-Z]*[A-Z])[0-9A-Z]{15,16}\b"),
+    # A credential key followed by a quoted value, in JSON, Python, YAML or shell style.
+    "credential assignment": re.compile(
+        r"(?:access_code|password|token|secret)[\"']?\s*[:=]\s*[\"'](?!REPLACE_|[\"'])", re.I),
 }
 
 
 def files(staged):
     if staged:
-        p = subprocess.run(["git", "diff", "--cached", "--name-only", "-z"], cwd=ROOT,
+        p = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=d", "-z"], cwd=ROOT,
                            capture_output=True, check=True)
         return [ROOT / x.decode() for x in p.stdout.split(b"\0") if x]
     return [p for p in ROOT.rglob("*") if p.is_file() and not any(
         part in {".git", ".venv", ".runtime", "__pycache__"} for part in p.relative_to(ROOT).parts)]
 
 
+def read(path, staged):
+    if not staged:
+        return path.read_text()
+    # Scan what will be committed, not the working tree.
+    p = subprocess.run(["git", "show", ":" + path.relative_to(ROOT).as_posix()], cwd=ROOT,
+                       capture_output=True, check=True)
+    return p.stdout.decode()
+
+
 def main():
     bad = []
-    for path in files("--staged" in sys.argv):
+    staged = "--staged" in sys.argv
+    for path in files(staged):
         try:
-            content = path.read_text()
-        except (OSError, UnicodeError):
+            content = read(path, staged)
+        except (OSError, UnicodeError, subprocess.CalledProcessError):
             bad.append((path, 0, "unreadable or binary"))
             continue
         for number, line in enumerate(content.splitlines(), 1):

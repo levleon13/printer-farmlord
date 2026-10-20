@@ -1,0 +1,37 @@
+name: Install or setup problem
+description: Something went wrong while installing or setting up Printer Farmlord.
+title: "Setup problem"
+labels: ["setup-problem"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please **don't** paste printer access codes, serial numbers, IP addresses or passwords. Fixes for setup problems are released every Friday.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What were you doing, and what did you see?
+      placeholder: "I clicked Finish and the page stayed on 'Starting your dashboard…'"
+    validations:
+      required: true
+  - type: textarea
+    id: details
+    attributes:
+      label: Error details
+      description: Filled in automatically when you use the "Report this problem" link. Private details are already removed.
+      render: text
+  - type: input
+    id: system
+    attributes:
+      label: System
+      description: "Filled in automatically, e.g. Darwin 24.0 (arm64) · Python 3.12"
+  - type: dropdown
+    id: host
+    attributes:
+      label: Where are you installing it?
+      options:
+        - Mac
+        - Linux / Raspberry Pi
+        - Android (Termux)
+        - Other

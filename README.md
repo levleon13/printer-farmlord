@@ -43,23 +43,35 @@ a problem on one machine doesn't get lost among four.
 
 ## Install
 
+First, on each printer's screen go to **Settings → Network** and turn on
+**LAN Only** and **Developer Mode**. Leave that screen open: setup asks for the
+printer's IP address, serial number and access code.
+
+**Mac or Linux** (needs `git` and Python 3):
+
 ```
-git clone <this-repo-url>
-cd printer-farmlord
-./scripts/install.sh
-./scripts/start.sh
+git clone https://github.com/levleon13/printer-farmlord.git
+cd printer-farmlord && ./scripts/start.sh
 ```
 
-`install.sh` creates a virtual environment, installs `paho-mqtt`, and then asks
-for each printer's label, LAN IP, serial number and LAN access code. You will
-find all three on the printer's own network screen.
+**Android:** install [Termux](https://f-droid.org/packages/com.termux/) (from
+F-Droid; the Play Store build is outdated), open it and paste:
 
-Those details are written only to `.runtime/config.json`, which is gitignored
-and never leaves the machine.
+```
+pkg install -y python ffmpeg git && git clone https://github.com/levleon13/printer-farmlord.git && cd printer-farmlord && ./scripts/start.sh
+```
 
-Then open **http://127.0.0.1:8765**.
+The first run installs everything it needs (about a minute), then opens a
+**setup page in your browser** at http://localhost:8765/setup. There you add your
+printers (with a **Test connection** button for each), choose whether other
+devices may open the dashboard, and set a password if they may. Click
+**Finish** and the dashboard starts. On a headless machine with no browser, start
+it with `AMS_SETUP_LAN=1 ./scripts/start.sh` and open
+`http://<machine-ip>:8765/setup` from another device on the same network.
 
-On Termux, run `pkg install python ffmpeg` first, then the same commands.
+Your printer details are written only to `.runtime/config.json` (private to your
+user, gitignored) and never leave the machine. Prefer the terminal? Run
+`./scripts/install.sh` instead; it asks the same questions there.
 
 Add one printer, confirm it connects, and only then add the rest. A wrong
 access code looks the same as an unreachable printer, and it is much easier to
@@ -68,12 +80,19 @@ tell them apart with a single machine configured.
 ## Reaching it from other devices
 
 By default the dashboard listens on localhost only. To open it from a phone or
-another computer, choose LAN access during setup and set a password. It then
-serves on your host's LAN address, port 8765. Your firewall may need to allow
-that port.
+another computer, tick **Let other devices open it** during setup and set a
+password. It then serves on your host's network address, port 8765. Your
+firewall may need to allow that port.
 
 The password is the only thing between your network and full control of the
-printers. Treat it accordingly, and do not expose port 8765 to the internet.
+printers. Treat it accordingly, and **do not forward port 8765 to the
+internet**. To reach it from outside, use a private network such as
+[Tailscale](https://tailscale.com) and open `http://<host-tailscale-ip>:8765`.
+
+The dashboard only answers requests addressed to an IP address or a local name
+(`localhost`, a bare host name, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`,
+`*.ts.net`). To use another DNS name, add it to `.runtime/config.json`:
+`"allowed_hosts": ["printers.example.org"]`.
 
 ## Keeping it running
 
@@ -132,7 +151,41 @@ the remote config. Keep the terminal open while you are slicing. On Termux, set
 
 Off by default. To enable it, add `stock_store_url` and a `stock_catalog` array
 to `.runtime/config.json`. Each entry needs `material`, a six-digit `color`,
-a numeric `product_id`, `sku` and `expected_name`. Restart afterwards.
+a numeric `product_id`, `sku` and `expected_name`. Optionally set
+`stock_store_name` to show the shop's name instead of "configured store".
+Restart afterwards.
+
+## Optional: unrestricted jogging
+
+The movement page limits jogs to ±100 mm per step. To allow free X/Y/Z
+movement on one printer, add `"allow_unrestricted_jog": true` to that printer's
+entry in `.runtime/config.json` and restart. Only do this if you know the
+machine's travel limits.
+
+## Security
+
+- Printer access codes stay on the host and are never sent to the browser. In
+  the edit form, leave the code blank to keep the saved one.
+- Sign-in uses a signed, HttpOnly, SameSite cookie that lasts 30 days; changing
+  the password signs everyone out. Five wrong passwords block sign-in from that
+  address for a minute.
+- Changes are only accepted from the dashboard page itself: other websites
+  cannot send commands through your browser, and requests addressed to unknown
+  host names are refused.
+- The printers use self-signed TLS certificates that cannot be verified, and the
+  dashboard itself is plain HTTP. Keep both on a network you trust, or reach the
+  dashboard through Tailscale/WireGuard.
+
+Found a security problem? Please report it privately to the maintainer rather
+than in a public issue.
+
+## Problems?
+
+If installing or setup fails, the error message includes a **Report this
+problem** link (the setup page also has one at the bottom). It opens a GitHub
+issue already filled in with the error and your system type; IP addresses,
+serial numbers and access codes are removed first, and nothing is sent until you
+click Submit. Setup problems are collected and fixed every Friday.
 
 ## Privacy
 
@@ -173,10 +226,11 @@ Nothing here is affiliated with or endorsed by Bambu Lab.
 | --- | --- |
 | `ams_tracker.py` | The whole application: hub, per-printer MQTT workers, drying, RFID, cameras, controls, inventory, web UI |
 | `fix_bridge_anchor.py` | Standalone Orca post-processing script |
-| `scripts/install.sh` | Creates the virtualenv and runs setup |
-| `scripts/setup.py` | Prompts for printer credentials, writes `.runtime/config.json` |
-| `scripts/start.sh` | Launches the dashboard |
+| `scripts/start.sh` | Installs on first run, opens browser setup if needed, launches the dashboard |
+| `scripts/install.sh` | Terminal alternative: creates the virtualenv and runs setup |
+| `scripts/setup.py` | Terminal prompts for printer credentials, writes `.runtime/config.json` |
 | `scripts/privacy_check.py` | Pre-commit scan for identifying data |
 | `scripts/connect_orca_remote.sh` | Optional SSH route to the printer LAN |
 | `.github/workflows/verify.yml` | CI: privacy and syntax checks |
+| `.github/ISSUE_TEMPLATE/problem.yml` | Form behind the "Report this problem" links |
 | `AGENTS.md` | Orientation for a coding agent working on this repo |

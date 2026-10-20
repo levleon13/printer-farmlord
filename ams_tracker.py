@@ -27,6 +27,7 @@ Files (next to this script unless AMS_TRACKER_DIR is set)
 """
 
 import json, os, ssl, sys, time, uuid, signal, hashlib, argparse, datetime as dt, math
+import ipaddress, urllib.parse
 
 STANDBY = os.environ.get("AMS_STANDBY", "1") != "0"
 
@@ -71,8 +72,55 @@ def jload(p, d):
     except Exception: return d
 def jsave(p, o):
     tmp = p + "." + uuid.uuid4().hex + ".tmp"
-    with open(tmp, "w") as f: json.dump(o, f, indent=1)
+    # 0600: config files hold printer access codes and the dashboard password.
+    with os.fdopen(os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), "w") as f: json.dump(o, f, indent=1)
     os.replace(tmp, p)
+
+MAX_BODY = 256 * 1024
+EXTRA_HOSTS = set()   # config.json "allowed_hosts": extra DNS names that may address the dashboard
+LOGIN_FAILS = {}      # client ip -> [failures, locked_until]
+def host_ok(host):
+    """Refuse DNS rebinding: only IP literals, local/tailnet names and configured hosts may address this server."""
+    h = (host or "").strip().lower()
+    if h.startswith("["): h = h[1:].split("]", 1)[0]
+    elif h.count(":") == 1: h = h.split(":", 1)[0]
+    if not h: return False
+    try: ipaddress.ip_address(h); return True
+    except ValueError: pass
+    return "." not in h or h.endswith((".local", ".localhost", ".ts.net", ".home.arpa", ".lan", ".internal")) or h in EXTRA_HOSTS
+def json_post_ok(headers):
+    """Other sites cannot send application/json here without a CORS preflight, which this server never grants."""
+    if headers.get("Content-Type", "").split(";", 1)[0].strip().lower() != "application/json": return False
+    origin = headers.get("Origin")
+    return not origin or urllib.parse.urlsplit(origin).netloc == headers.get("Host")
+def read_body(headers, rfile, limit=MAX_BODY):
+    try: n = int(headers.get("Content-Length") or 0)
+    except ValueError: return None
+    if n < 0 or n > limit: return None
+    return rfile.read(n)
+def printer_name_ok(base, name):
+    """Printer names become directory names under BASE/printers; keep them there."""
+    if not name or len(name) > 64 or name.startswith(".") or any(c in name for c in "/\\") or any(ord(c) < 32 for c in name): return False
+    root = os.path.realpath(os.path.join(base, "printers"))
+    return os.path.dirname(os.path.realpath(os.path.join(root, name))) == root
+REPORT_URL = "https://github.com/levleon13/printer-farmlord/issues/new"
+def scrub(text):
+    """Blank out IPs, serial-like codes and home-folder names before anything leaves this machine."""
+    import re
+    text = re.sub(r"\b\d{1,3}(?:\.\d{1,3}){3}\b", "<ip>", str(text))
+    text = re.sub(r"\b(?=[0-9A-Z]*\d)(?=[0-9A-Z]*[A-Z])[0-9A-Z]{12,16}\b", "<serial>", text)
+    return re.sub(r"/(?:Users|home)/[^/\s]+", "~", text)[-1500:]
+def report_url(title, details=""):
+    """A prefilled GitHub issue; the user reviews it and clicks Submit, nothing is sent automatically."""
+    import platform
+    system = f"{platform.system()} {platform.release()} ({platform.machine()}) · Python {platform.python_version()}"
+    return REPORT_URL + "?" + urllib.parse.urlencode(dict(template="problem.yml", title=title, details=scrub(details), system=system))
+def store_name():
+    n = str(jload(CONFIG, {}).get("stock_store_name") or "")
+    return "".join(c for c in n if c.isalnum() or c in " .&-")[:40]
+def public_printer_config(c):
+    """Never send LAN access codes to the browser."""
+    c = dict(c); c["access_code_set"] = bool(c.pop("access_code", "")); return c
 def append(p, o):
     with open(p, "a") as f: f.write(json.dumps(o) + "\n")
 def fnum(x, d=None):
@@ -2415,7 +2463,6 @@ def errdb():
     try:
         import certifi; ctxs.append(ssl.create_default_context(cafile=certifi.where()))
     except Exception: pass
-    ctxs.append(ssl._create_unverified_context())
     got = {"print": dict((cached or {}).get("print", {})), "hms": dict((cached or {}).get("hms", {}))}
     for kind, url in ERRDB_URLS.items():
         for ctx in ctxs:
@@ -2837,7 +2884,7 @@ def report_data():
                     pct=assess(s)["pct"]) for s in spools.values() if s.get("name") or s.get("manual") or s.get("removed_at")]
     try: ev = [json.loads(l) for l in open(EVENTS).read().splitlines()[-40:]][::-1]
     except FileNotFoundError: ev = []
-    return dict(current_action=current_printer_action(state), estimated_power=estimated_power(state), nozzle_source=nozzle_source, generated=iso(), last_update=iso(state.get("t")) if state.get("t") else None,
+    return dict(unrestricted_jog=bool(jload(CONFIG, {}).get("allow_unrestricted_jog")), current_action=current_printer_action(state), estimated_power=estimated_power(state), nozzle_source=nozzle_source, generated=iso(), last_update=iso(state.get("t")) if state.get("t") else None,
                 print_state=state.get("print_state"), print_left_min=state.get("print_left_min"),
                 pullback_retry=pullback_retry_data(state), errors=error_data(state), process_faults=drying_faults(state), spd_lvl=state.get("spd_lvl"), spd_mag=state.get("spd_mag"),
                 wedge_note=settings().get("wedge_note"), print_pct=state.get("print_pct"), print_layer=state.get("print_layer"), print_layers=state.get("print_layers"), print_name=state.get("print_name"),
@@ -3511,7 +3558,7 @@ class AttentionCenter:
                                       'the listing has changed to a different product' if spider_status == 'different_product'
                                       else 'no exact listing was found')
                             wanted['spider|'+item['id']] = dict(printer='Stock', code='SPIDER_UNAVAILABLE_'+item['id'],
-                                severity='warning', message=f"Store: {item['name']} is unavailable ({reason}). No substitute was added to the cart.",
+                                severity='warning', message=f"{store_name() or 'Store'}: {item['name']} is unavailable ({reason}). No substitute was added to the cart.",
                                 url='', blocking=False)
             changed = self.policy_dirty
             self.policy_dirty = False
@@ -4623,7 +4670,7 @@ body.layout-resize-active{user-select:none}
 
 .room-alert-wrap{position:relative}.room-alert-dropdown{position:absolute;right:0;top:calc(100% + 8px);z-index:50;width:min(390px,calc(100vw - 24px));max-height:min(65vh,620px);overflow:auto;padding:8px;background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:0 20px 45px #0009}.room-alert-dropdown[hidden]{display:none}.fleet-alert{display:flex;align-items:flex-start;gap:6px;padding:7px;border-bottom:1px solid var(--line)}.fleet-alert:last-child{border-bottom:0}.fleet-alert-open{flex:1;min-width:0;text-align:left;background:transparent;border:0;padding:6px;white-space:normal}.fleet-alert-open strong,.fleet-alert-open span{display:block}.fleet-alert-open strong{color:var(--warn);font-size:12px;margin-bottom:4px}.fleet-alert-open span{color:var(--fg);font-size:12px;line-height:1.4;overflow-wrap:anywhere}.fleet-alert-dismiss{flex:none;font-size:11px;padding:6px 8px}#room-stop-all{background:#f18f9817;color:var(--bad);font-weight:500}@media(max-width:600px){.room-alert-dropdown{right:-10px}.room-heading-actions{flex-wrap:wrap;justify-content:flex-end}}
 </style></head><body>
-<header><div class="brand"><h1>Print room</h1></div><nav class="room-nav" aria-label="Main navigation"><button id="room-watch" aria-pressed="true" onclick="roomShow('watch')">Watch</button><button id="room-drying" aria-pressed="false" onclick="roomShow('drying')">Filament management</button></nav>
+<header><div class="brand"><h1 style="display:flex;align-items:center;gap:10px"><svg class="madking" viewBox="0 0 64 64" width="40" height="40" role="img" aria-label="Mad king logo" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(-14 32 14)"><path d="M14 22 L12 6 L21 14 L27 2 L33 13 L41 3 L44 15 L52 7 L50 22 Z" fill="#f5c542" stroke="#8a5a00" stroke-width="2" stroke-linejoin="round"/><circle cx="27" cy="2.5" r="2.4" fill="#e23b3b"/><circle cx="41" cy="3.5" r="2.4" fill="#3b7be2"/><circle cx="12" cy="6" r="2" fill="#3be27b"/><circle cx="52" cy="7" r="2" fill="#e23b3b"/><rect x="18" y="16" width="5" height="4" rx="1" fill="#e23b3b"/><rect x="38" y="16" width="5" height="4" rx="1" fill="#3b7be2"/></g><path d="M12 40 Q8 58 22 62 L26 56 L30 63 L34 56 L38 63 L42 56 L46 61 Q57 56 52 40 Z" fill="#b5651d" stroke="#5e300a" stroke-width="2" stroke-linejoin="round"/><circle cx="32" cy="36" r="17" fill="#f2c094" stroke="#7a4a24" stroke-width="2"/><path d="M15 28 L26 33 M37 31 L50 24" stroke="#2a1a0a" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="37" r="6" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="42" cy="36" r="4" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="26" cy="39" r="2.4" fill="#111"/><circle cx="40.5" cy="34.5" r="1.6" fill="#111"/><path d="M22 45 Q32 41 44 46 L42 52 Q32 49 24 52 Z" fill="#5b1010" stroke="#2a1a0a" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 46.5 L42 46.5 M27 44.5 V48 M31 43.5 V48 M35 43.5 V48 M39 44.5 V48" stroke="#fff" stroke-width="1.6"/><path d="M50 30 l4 -1 M51 33 l5 1 M49 27 l3 -3" stroke="#e23b3b" stroke-width="2" stroke-linecap="round"/><path d="M14 22 q-3 3 -2 6 M50 22 q3 3 2 6" stroke="#9aa" stroke-width="1.5" fill="none"/></svg><span>printing_farmlord</span></h1></div><nav class="room-nav" aria-label="Main navigation"><button id="room-watch" aria-pressed="true" onclick="roomShow('watch')">Watch</button><button id="room-drying" aria-pressed="false" onclick="roomShow('drying')">Filament management</button></nav>
 <div class="hdr">
   <span class="conn" id="net" title="Which network this Mac is on"><i></i><span>network…</span></span>
   <span class="conn" id="conn"><i></i><span>connecting…</span></span>
@@ -5664,15 +5711,15 @@ function renderTabs(){
   $('#room-settings-printer').textContent=P||'None';renderRoom();
   $('#tabs').innerHTML=PRINTERS.map(x=>{
     const st={...(x.summary||{})};if(attentionPending(x.name).length){st.error=true;st.text='Needs attention';}const dot=st.error?'bad':st.busy?'busy':st.paused?'paused':st.heating?'heat':st.ok?'ok':'';
-    return`<div class="tab ${x.name===P?'active':''}" draggable="true" data-name="${x.name}" role="button" tabindex="0" aria-pressed="${x.name===P}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectPrinter('${x.name}')}" onclick="selectPrinter('${x.name}')" ondragstart="dragTab(event)" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropTab(event,this)"><span class="dot ${dot}"></span>${x.name}<small>${st.text||''}</small></div>`}).join('')
+    return`<div class="tab ${x.name===P?'active':''}" draggable="true" data-name="${pcEscape(x.name)}" role="button" tabindex="0" aria-pressed="${x.name===P}" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();selectPrinter(this.dataset.name)}" onclick="selectPrinter(this.dataset.name)" ondragstart="dragTab(event)" ondragover="event.preventDefault();this.classList.add('over')" ondragleave="this.classList.remove('over')" ondrop="dropTab(event,this)"><span class="dot ${dot}"></span>${pcEscape(x.name)}<small>${pcEscape(st.text||'')}</small></div>`}).join('')
     +`<div class="tab add-printer" style="font-weight:400;font-size:15px" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();addPrinterDlg()}" onclick="addPrinterDlg()">+ Add printer</div>`;
 }
 function editPrinterDlg(){const x=PRINTERS.find(x=>x.name===P)||{};const c=x.config||{};
-  openDialog(`<h3 style="margin:0 0 10px">Edit ${P}</h3>
-  <label>Name</label><input name="name" value="${P}">
-  <label>IP address</label><input name="ip" value="${c.ip||''}">
-  <label>Serial</label><input name="serial" value="${c.serial||''}">
-  <label>Access code</label><input name="access_code" value="${c.access_code||''}">`,
+  openDialog(`<h3 style="margin:0 0 10px">Edit ${pcEscape(P)}</h3>
+  <label>Name</label><input name="name" value="${pcEscape(P)}">
+  <label>IP address</label><input name="ip" value="${pcEscape(c.ip||'')}">
+  <label>Serial</label><input name="serial" value="${pcEscape(c.serial||'')}">
+  <label>Access code</label><input name="access_code" value="" autocomplete="off" placeholder="${c.access_code_set?'Saved; leave blank to keep it':''}">`,
   async fd=>{const b=Object.fromEntries(fd);b.old_name=P;const r=await (await fetch('/api/edit_printer',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b)})).json();
     if(r.result!=='ok')alert(r.result);else{P=b.name;try{localStorage.setItem('ams_printer',P)}catch(e){};await loadPrinters();load();}});}
 function addPrinterDlg(){openDialog(`<h3 style="margin:0 0 10px">Add a printer</h3>
@@ -5903,6 +5950,8 @@ const PC_STATES=new Map();let PC_DATA_PRINTER=null;
 let JOG_STEP=1;try{JOG_STEP=parseFloat(localStorage.getItem('ams_step'))||1}catch(e){}
 function pcState(printer=P){const key=printer||'';if(!PC_STATES.has(key))PC_STATES.set(key,{panel:null,tab:'Movement',inflight:new Set(),feedback:null,waiting:null,tempTargets:{}});return PC_STATES.get(key);}
 function pcEscape(value){return String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+// A string argument for an inline handler: JSON-quoted, then HTML-escaped for the attribute.
+function jsArg(value){return pcEscape(JSON.stringify(String(value??'')));}
 function pcIcon(name){const paths={edit:'<path d="m12 3 3 3-8 8-4 1 1-4 8-8Z"/>',arrow:'<path d="m7 4 5 5-5 5"/>',controls:'<path d="M3 5h12M3 13h12M6 3v4M12 11v4"/>',light:'<path d="M6.5 11.5C6.5 10 4.5 9 4.5 6.5a4.5 4.5 0 0 1 9 0c0 2.5-2 3.5-2 5Z M6.5 14h5 M8 16h2"/>',fan:'<circle cx="9" cy="9" r="1.5"/><path d="M8 7C3 3 9 0 10 4l-.2 3M11 9c6-1 4 6 1 4l-2-2M8 11c-1 6-6 1-3-1l2-1"/>',lock:'<rect x="4" y="8" width="10" height="8" rx="2"/><path d="M6 8V5a3 3 0 0 1 6 0v3"/>',pause:'<path d="M6 4v10M12 4v10"/>',play:'<path d="m6 3 8 6-8 6Z"/>',close:'<path d="m4 4 10 10M14 4 4 14"/>',home:'<path d="m2 8 7-6 7 6M4 7v9h10V7M7 16v-5h4v5"/>'};return `<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name]||''}</svg>`;}
 function pcConnected(){return !!D&&PC_DATA_PRINTER===P&&!D.stale&&D.mqtt&&D.mqtt.mqtt==='connected';}
 function pcBusy(){return !!D&&['RUNNING','PREPARE','PAUSE'].includes(D.print_state);}
@@ -6198,10 +6247,10 @@ function openDialog(html,onok){const f=$('#form');f.innerHTML=html+`<div class="
   const d=$('#dlg');DLG=true;roomStopSnapshots();dropCam();
   d.onclose=async()=>{DLG=false;if(d.returnValue==='ok'){await onok(new FormData(f));}load();tick();startCamWhenReady();roomSnapshots();};d.showModal();}
 function nameDlg(id,cur){
-  const known=D.known.map(k=>`<option value="${k.id}">${k.name} (${k.type})</option>`).join('');
+  const known=D.known.map(k=>`<option value="${pcEscape(k.id)}">${pcEscape(k.name)} (${pcEscape(k.type)})</option>`).join('');
   openDialog(`<h3 style="margin:0 0 10px">${cur?'Rename':'What spool is this?'}</h3>
-  <label>Name (brand, material, colour)</label><input name="name" value="${cur||''}" placeholder="Sunlu PETG-CF black #2" autofocus>
-  ${cur?'':`<label>Material</label><select name="material"><option value="">— keep —</option>${D.materials.map(m=>`<option>${m}</option>`).join('')}</select>`}
+  <label>Name (brand, material, colour)</label><input name="name" value="${pcEscape(cur||'')}" placeholder="Sunlu PETG-CF black #2" autofocus>
+  ${cur?'':`<label>Material</label><select name="material"><option value="">— keep —</option>${D.materials.map(m=>`<option>${pcEscape(m)}</option>`).join('')}</select>`}
   ${known&&!cur?`<label>…or it's a spool I already know</label><select name="same"><option value="">— no —</option>${known}</select>`:''}`,
   async fd=>{if(fd.get('same'))await api('/api/same',{new_id:id,old_id:fd.get('same')});else if(fd.get('name'))await api('/api/name',{id,name:fd.get('name'),material:fd.get('material')||undefined});});
 }
@@ -6209,9 +6258,9 @@ function setSpoolDlg(key,slot,ams){
   const d=$('#dlg'); if(!D)return;const cur=(D.slots.find(x=>x.key===key)||{}).spool;
   d.dataset.printer=P;roomStopSnapshots();dropCam();
   const used=(D.used||[]);
-  const chip=t=>`<div class="fchip" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="pickType('${key}',${slot},'${ams}','${t.type}')">${t.type}</div>`;
+  const chip=t=>`<div class="fchip" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="pickType(${jsArg(key)},${slot},${jsArg(ams)},${jsArg(t.type)})">${pcEscape(t.type)}</div>`;
   const rest=(D.materials||[]).filter(m=>!used.find(u=>u.type===m))
-    .map(m=>`<div class="fchip" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="pickType('${key}',${slot},'${ams}','${m}')">${m}</div>`).join('');
+    .map(m=>`<div class="fchip" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();this.click()}" onclick="pickType(${jsArg(key)},${slot},${jsArg(ams)},${jsArg(m)})">${pcEscape(m)}</div>`).join('');
   d.querySelector('#form').innerHTML=`<h3 style="margin:0 0 4px">${unitName(ams)} slot ${slot}</h3>
     <div class="meta" style="margin-bottom:12px">Step 1 of 2 — filament type${cur?` (now ${cur.type||'?'})`:''}</div>
     <div class="fchips">${used.map(chip).join('')}</div>
@@ -6463,7 +6512,7 @@ if STANDBY:
 
 MOVEMENT_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Movement · Print room</title>
+<title>Movement · printing_farmlord</title>
 <style>
 :root{color-scheme:dark;--bg:#111719;--panel:#1c2528;--line:#354347;--fg:#edf3f2;--mute:#adbec0;--accent:#ace4d0;--bad:#ffaaa6}
 *{box-sizing:border-box}body{margin:0;min-height:100vh;background:var(--bg);color:var(--fg);font:14px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
@@ -6491,7 +6540,7 @@ function endpoint(path){return `/api/p/${encodeURIComponent(printer)}${path}`}
 function feedback(message,error=false){$('feedback').textContent=message;$('feedback').classList.toggle('error',error)}
 function connected(){return !!state&&!state.stale&&state.mqtt?.mqtt==='connected'}
 function blocked(){if(!connected())return 'Printer connection is unavailable.';if(['RUNNING','PREPARE','PAUSE'].includes(state.print_state))return 'Movement is locked while a print is active.';if(state.print_state==='FAILED'&&(state.errors?.print_error||state.errors?.hms?.some(e=>e.blocking)))return 'Clear the failed print on the printer screen first.';return ''}
-function render(){const reason=blocked(),status=$('machine-status');status.textContent=reason||('Idle · movement available');status.classList.toggle('error',!!reason);for(const b of document.querySelectorAll('[data-axis],#home'))b.disabled=!!reason||sending;for(const b of document.querySelectorAll('[data-step]'))b.setAttribute('aria-pressed',String(Number(b.dataset.step)===step))}
+function render(){const reason=blocked(),status=$('machine-status');status.textContent=reason||(state&&state.unrestricted_jog?'Idle · unrestricted X/Y/Z movement':'Idle · movement available');status.classList.toggle('error',!!reason);for(const b of document.querySelectorAll('[data-axis],#home'))b.disabled=!!reason||sending;for(const b of document.querySelectorAll('[data-step]'))b.setAttribute('aria-pressed',String(Number(b.dataset.step)===step))}
 async function poll(){if(!printer)return;const selected=printer,controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);try{const r=await fetch(endpoint('/api/state'),{cache:'no-store',signal:controller.signal});const version=r.headers.get('X-AMS-UI-Version');if(version&&version!==MOVE_UI_VERSION){if(!sending)location.reload();return}if(!r.ok)throw Error('Printer status unavailable');const data=await r.json();if(printer!==selected)return;state=data;render()}catch(e){if(printer!==selected)return;state=null;render()}finally{clearTimeout(timer)}}
 async function command(body,label){const reason=blocked();if(reason){feedback(reason,true);return}if(sending)return;sending=true;render();feedback(label+' · sending…');const selected=printer;
  const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),20000);
@@ -6502,7 +6551,7 @@ function startCamera(){stopCamera();if(!printer||document.hidden)return;const se
  camCheck=setInterval(async()=>{if(document.hidden||printer!==selected)return;try{const r=await fetch(endpoint('/api/cam_status'),{cache:'no-store'});const s=await r.json();if(printer!==selected)return;if(s.running&&s.age<5){$('camera-status').textContent='Live';if(img.naturalWidth>0)$('picture').classList.add('ready')}else if(s.running&&s.age>=10){$('camera-status').textContent='Stream stalled · reconnecting';startCamera()}else if(!s.ffmpeg){$('camera-status').textContent='Camera service unavailable'}}catch(e){}},5000)}
 function selectPrinter(name){printer=name;state=null;feedback('');render();history.replaceState(null,'','/movement?printer='+encodeURIComponent(name));document.title=name+' · Movement';startCamera();poll()}
 async function init(){try{const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),8000);let r;try{r=await fetch('/api/printers',{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timer)}if(!r.ok)throw Error('Cannot load printers');const list=await r.json();const names=list.map(x=>x.name);if(!names.includes(printer))printer=names[0]||'';const select=$('printer');select.replaceChildren();for(const name of names){const option=document.createElement('option');option.value=name;option.textContent=name;select.append(option)}select.value=printer;select.onchange=()=>selectPrinter(select.value);if(printer)selectPrinter(printer);else $('machine-status').textContent='No printers configured'}catch(e){$('machine-status').textContent='Reconnecting to printer controls…';if(printer&&!$('printer').options.length){const option=document.createElement('option');option.value=printer;option.textContent=printer;$('printer').append(option);startCamera();poll()}setTimeout(init,3000)}}
-document.querySelectorAll('[data-axis]').forEach(b=>b.onclick=()=>command({action:'move',axis:b.dataset.axis,dist:Number(b.dataset.sign)*step},b.dataset.axis==='Z'?(Number(b.dataset.sign)>0?'Lower bed ':'Raise bed ')+step+' mm':`Move ${b.dataset.axis} ${Number(b.dataset.sign)*step} mm`));
+document.querySelectorAll('[data-axis]').forEach(b=>b.onclick=()=>command({action:state&&state.unrestricted_jog?'move_unrestricted':'move',axis:b.dataset.axis,dist:Number(b.dataset.sign)*step},b.dataset.axis==='Z'?(Number(b.dataset.sign)>0?'Lower bed ':'Raise bed ')+step+' mm':`Move ${b.dataset.axis} ${Number(b.dataset.sign)*step} mm`));
 document.querySelectorAll('[data-step]').forEach(b=>b.onclick=()=>{step=Number(b.dataset.step);try{localStorage.setItem('ams_step',String(step))}catch(e){}render()});
 $('home').onclick=()=>{const axes=$('home-axes').value;if(confirm('Home '+(axes==='all'?'all axes':axes==='xy'?'X and Y':'Z')+'? Make sure the toolhead and bed can move freely.'))command({action:'home',what:axes},'Homing')};
 // Keep the MJPEG request alive while switching tabs or macOS windows. The
@@ -6567,6 +6616,7 @@ def serve(open_browser=False, port=None):
             b = body.encode() if isinstance(body, str) else body
             self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.send_header("X-AMS-UI-Version", UI_VERSION); self.end_headers(); self.wfile.write(b)
         def do_GET(self):
+            if not host_ok(self.headers.get("Host")): return self._send(421, json.dumps({"error": "Unknown host."}))
             if self.path.startswith("/api/cam.jpg"): cam_snapshot(self)
             elif self.path.startswith("/api/cam.mjpg"): cam_stream(self)
             elif self.path.startswith("/api/cam_status"): self._send(200, json.dumps(
@@ -6579,7 +6629,13 @@ def serve(open_browser=False, port=None):
         def do_POST(self):
             if STANDBY:
                 return self._send(503, json.dumps({"error": "Android host is in standby; use the current dashboard for controls."}))
-            n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}")
+            if not host_ok(self.headers.get("Host")) or not json_post_ok(self.headers):
+                return self._send(403, json.dumps({"error": "Use the dashboard to make changes."}))
+            raw = read_body(self.headers, self.rfile)
+            if raw is None: return self._send(413, json.dumps({"error": "Request too large."}))
+            try: body = json.loads(raw or b"{}")
+            except ValueError: return self._send(400, json.dumps({"error": "Invalid JSON."}))
+            if not isinstance(body, dict): return self._send(400, json.dumps({"error": "Invalid request."}))
             with LOCK: self._post(body)
         def _post(self, body):
             if self.path == "/api/name": r = do_name(body["id"], body["name"], body.get("material"))
@@ -6654,198 +6710,155 @@ def orca_filament_sync(force=False):
     return "nothing to do"
 
 
-def hub(open_browser=False):
-    """Multi-printer mode: one worker process per printer (config.json → "printers"), tabbed dashboard on PORT."""
-    import threading, http.server, subprocess, webbrowser, urllib.request
-    cfg = jload(CONFIG, {})
-    printers = cfg.get("printers") or ([dict(name=cfg.get("name", "Printer"), ip=cfg["ip"], serial=cfg["serial"], access_code=cfg["access_code"])] if cfg.get("ip") else [])
-    if not printers: sys.exit("config.json has no printers")
-    workers = {}
-    def add_worker(p):
-        d = os.path.join(BASE, "printers", p["name"]); os.makedirs(d, exist_ok=True)
-        jsave(os.path.join(d, "config.json"), dict(ip=p["ip"], serial=p["serial"], access_code=p["access_code"], name=p["name"]))
-        if not os.path.exists(os.path.join(d, "settings.json")): jsave(os.path.join(d, "settings.json"), dict(auto={}, manual_hold_until={}, auto_started={}))
-        used = {w["port"] for w in workers.values()}; port = PORT + 1
-        while port in used: port += 1
-        workers[p["name"]] = dict(port=port, dir=d, proc=None)
-    for p in printers: add_worker(p)
+SETUP_LOGO = '<svg class="madking" viewBox="0 0 64 64" width="40" height="40" role="img" aria-label="Mad king logo" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(-14 32 14)"><path d="M14 22 L12 6 L21 14 L27 2 L33 13 L41 3 L44 15 L52 7 L50 22 Z" fill="#f5c542" stroke="#8a5a00" stroke-width="2" stroke-linejoin="round"/><circle cx="27" cy="2.5" r="2.4" fill="#e23b3b"/><circle cx="41" cy="3.5" r="2.4" fill="#3b7be2"/><circle cx="12" cy="6" r="2" fill="#3be27b"/><circle cx="52" cy="7" r="2" fill="#e23b3b"/><rect x="18" y="16" width="5" height="4" rx="1" fill="#e23b3b"/><rect x="38" y="16" width="5" height="4" rx="1" fill="#3b7be2"/></g><path d="M12 40 Q8 58 22 62 L26 56 L30 63 L34 56 L38 63 L42 56 L46 61 Q57 56 52 40 Z" fill="#b5651d" stroke="#5e300a" stroke-width="2" stroke-linejoin="round"/><circle cx="32" cy="36" r="17" fill="#f2c094" stroke="#7a4a24" stroke-width="2"/><path d="M15 28 L26 33 M37 31 L50 24" stroke="#2a1a0a" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="37" r="6" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="42" cy="36" r="4" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="26" cy="39" r="2.4" fill="#111"/><circle cx="40.5" cy="34.5" r="1.6" fill="#111"/><path d="M22 45 Q32 41 44 46 L42 52 Q32 49 24 52 Z" fill="#5b1010" stroke="#2a1a0a" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 46.5 L42 46.5 M27 44.5 V48 M31 43.5 V48 M35 43.5 V48 M39 44.5 V48" stroke="#fff" stroke-width="1.6"/><path d="M50 30 l4 -1 M51 33 l5 1 M49 27 l3 -3" stroke="#e23b3b" stroke-width="2" stroke-linecap="round"/><path d="M14 22 q-3 3 -2 6 M50 22 q3 3 2 6" stroke="#9aa" stroke-width="1.5" fill="none"/></svg>'
+SETUP_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark"><title>Set up · printing_farmlord</title>
+<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:#0e1618;color:#edf3f2;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:100%;max-width:560px;padding:28px;background:#1b2528;border:1px solid #344448;border-radius:16px}
+h1{display:flex;align-items:center;gap:10px;font-size:25px;margin:0 0 6px}h2{font-size:18px;margin:26px 0 6px}
+p,.hint{color:#adbec0;font-size:14px;line-height:1.5;margin:0 0 14px}.step{color:#8fd3b5;font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-top:18px}
+label{display:block;font-size:14px;margin:12px 0 6px}input{display:block;width:100%;font:inherit;padding:11px 12px;color:#edf3f2;background:#0e1618;border:1px solid #53666b;border-radius:10px}
+input:focus{outline:2px solid #8fd3b5;outline-offset:1px}.row{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}@media(max-width:480px){.row{grid-template-columns:1fr}}
+button{font:inherit;font-weight:600;padding:11px 16px;border-radius:10px;border:1px solid #53666b;background:#24343a;color:#edf3f2;cursor:pointer}button.primary{background:#bfe8d4;color:#0e1618;border-color:#bfe8d4}
+button:disabled{opacity:.5;cursor:default}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+ul{list-style:none;padding:0;margin:10px 0}li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid #344448;border-radius:10px;margin-bottom:8px;background:#162024}
+li small{color:#adbec0}li button{padding:6px 10px;font-weight:400}.ok{color:#8fd3b5}.bad{color:#ff9b8f}.msg{min-height:22px;font-size:14px;margin-top:10px}
+.check{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.check input{width:auto;margin-top:3px}</style></head>
+<body><main>
+<h1>__LOGO__<span>printing_farmlord</span></h1>
+<p>Let's connect your printers. This takes about two minutes, and everything you enter stays on this computer.</p>
 
-    me = os.path.abspath(__file__); my_mtime = os.path.getmtime(me)
-    def supervise():
-        nonlocal my_mtime
-        while True:
-            # self-update: when ams_tracker.py changes on disk, restart everything (launchd relaunches the hub)
-            try:
-                if os.path.getmtime(me) != my_mtime:
-                    time.sleep(3)  # let the write finish
-                    try: compile(open(me).read(), me, "exec")
-                    except SyntaxError as e:
-                        print(f"[{iso()}] new code has a syntax error, not restarting: {e}", flush=True)
-                        my_mtime = os.path.getmtime(me)   # noqa — wait for the next edit
-                        continue
-                    print(f"[{iso()}] code updated — restarting", flush=True)
-                    for w in workers.values():
-                        if w["proc"]: w["proc"].terminate()
-                    os._exit(0)
-            except FileNotFoundError: pass
-            for name, w in workers.items():
-                if w["proc"] is None or w["proc"].poll() is not None:
-                    env = dict(os.environ, AMS_TRACKER_DIR=w["dir"])
-                    log = open(os.path.join(w["dir"], "worker.log"), "a")
-                    w["proc"] = subprocess.Popen([sys.executable, os.path.abspath(__file__), "serve", "--port", str(w["port"])], env=env, stdout=log, stderr=log)
-                    print(f"[{iso()}] started worker {name} on port {w['port']}", flush=True)
-            time.sleep(5)
-    threading.Thread(target=supervise, daemon=True).start()
+<div class="step">Step 1 of 2</div><h2>Add your printers</h2>
+<p class="hint">On each printer's screen: <b>Settings → Network</b>, turn on <b>LAN Only</b> and <b>Developer Mode</b>. The IP address, serial number and access code are shown there.</p>
+<form id="pf" autocomplete="off">
+ <label for="name">Printer name</label><input id="name" required maxlength="40" placeholder="e.g. H2D-1">
+ <div class="row"><div><label for="ip">IP address</label><input id="ip" required inputmode="decimal" placeholder="e.g. 192.0.2.10"></div>
+ <div><label for="serial">Serial number</label><input id="serial" required maxlength="32"></div></div>
+ <label for="code">Access code</label><input id="code" required maxlength="32" autocomplete="off">
+ <div class="actions"><button type="button" id="test">Test connection</button><button type="submit">Add printer</button></div>
+ <div class="msg" id="pmsg" role="status"></div>
+</form>
+<ul id="list"></ul>
 
-    def filament_sync_loop():
-        while True:
-            try:
-                r = orca_filament_sync()
-                if r not in ("nothing to do",) and not r.startswith("Orca is running"):
-                    print(f"[{iso()}] filament sync: {r}", flush=True)
-            except Exception as e:
-                print(f"[{iso()}] filament sync error: {e}", flush=True)
-            time.sleep(900)
-    threading.Thread(target=filament_sync_loop, daemon=True).start()
+<div class="step">Step 2 of 2</div><h2>Who can open the dashboard?</h2>
+<div class="check"><input type="checkbox" id="lan"><label for="lan" style="margin:0">Let other devices on my network open it (phone, laptop, Tailscale). Requires a password.</label></div>
+<div id="pw" hidden><label for="pw1">Dashboard password (at least 8 characters)</label><input id="pw1" type="password" autocomplete="new-password">
+<label for="pw2">Repeat password</label><input id="pw2" type="password" autocomplete="new-password"></div>
+<div class="actions"><button class="primary" id="save" disabled>Finish and open the dashboard</button></div>
+<div class="msg" id="smsg" role="status"></div>
+<p class="hint" style="margin-top:22px">Stuck? <a id="report" href="__REPORT__" target="_blank" rel="noopener" style="color:#8fd3b5">Report a problem</a>. It opens a GitHub issue for you to check and send; IP addresses, serial numbers and access codes are never included.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id),printers=[];
+function post(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json())}
+function current(){return{name:$('name').value.trim(),ip:$('ip').value.trim(),serial:$('serial').value.trim(),access_code:$('code').value.trim()}}
+function say(id,text,cls,report){const m=$(id);m.textContent=text;m.className='msg '+(cls||'');if(report){const a=document.createElement('a');a.href=report;a.target='_blank';a.rel='noopener';a.style.color='#8fd3b5';a.textContent=' Report this problem';m.append(a)}}
+function render(){const ul=$('list');ul.replaceChildren();printers.forEach((p,i)=>{const li=document.createElement('li'),t=document.createElement('div'),b=document.createElement('strong'),s=document.createElement('small'),x=document.createElement('button');b.textContent=p.name;s.textContent=' '+p.ip;t.append(b,s);x.type='button';x.textContent='Remove';x.onclick=()=>{printers.splice(i,1);render()};li.append(t,x);ul.append(li)});$('save').disabled=!printers.length}
+$('test').onclick=async()=>{const p=current();if(!p.ip)return say('pmsg','Enter the IP address first.','bad');say('pmsg','Checking '+p.ip+'…');const r=await post('/api/setup/test',{ip:p.ip});say('pmsg',r.message,r.reachable?'ok':'bad')};
+$('pf').onsubmit=async e=>{e.preventDefault();const p=current();const r=await post('/api/setup/check',{printer:p,existing:printers.map(x=>x.name)});if(!r.ok)return say('pmsg',r.message,'bad');printers.push(p);render();$('pf').reset();say('pmsg','Added '+p.name+'. Add another, or go to step 2.','ok');$('name').focus()};
+$('lan').onchange=()=>{$('pw').hidden=!$('lan').checked};
+$('save').onclick=async()=>{const lan=$('lan').checked,pw=$('pw1').value;if(lan&&pw.length<8)return say('smsg','Choose a password of at least 8 characters.','bad');if(lan&&pw!==$('pw2').value)return say('smsg','The two passwords are different.','bad');
+ $('save').disabled=true;say('smsg','Saving…');const r=await post('/api/setup/save',{printers,lan_access:lan,password:lan?pw:''});if(!r.ok){$('save').disabled=false;return say('smsg',r.message,'bad',r.report)}
+ say('smsg','Saved. Starting your dashboard…','ok');const wait=async()=>{try{const s=await fetch('/api/setup/state',{cache:'no-store'});if(s.status===200&&(await s.json()).setup)throw 0;location.href='/'}catch(e){setTimeout(wait,1500)}};setTimeout(wait,2500)};
+</script></body></html>"""
 
-    AUTH = (jload(CONFIG, {}) or {}).get("auth") or {}
+
+def setup_wizard():
+    """First run: no printers configured yet. Serve a localhost-only setup page, write config.json, then restart into the dashboard."""
+    import html, http.server, socket, threading, webbrowser
+    page = SETUP_HTML.replace("__LOGO__", SETUP_LOGO).replace("__REPORT__", html.escape(report_url("Setup problem"), quote=True)).encode()
+    bind = "0.0.0.0" if os.environ.get("AMS_SETUP_LAN") == "1" else "127.0.0.1"
+
+    def check_printer(p, existing):
+        p = {k: str((p or {}).get(k, "")).strip() for k in ("name", "ip", "serial", "access_code")}
+        if not all(p.values()): return None, "Fill in all four fields."
+        if not printer_name_ok(BASE, p["name"]) or len(p["name"]) > 40: return None, "Use a short name without slashes, and don't start it with a dot."
+        if p["name"] in existing: return None, "You already added a printer with that name."
+        try: ipaddress.ip_address(p["ip"])
+        except ValueError: return None, "That IP address doesn't look right. It's four numbers with dots, e.g. 192.0.2.10."
+        if len(p["serial"]) > 32 or not p["serial"].isalnum(): return None, "The serial number should be letters and digits only."
+        if len(p["access_code"]) > 32: return None, "That access code is too long."
+        return p, ""
 
     class H(http.server.BaseHTTPRequestHandler):
         def log_message(self, *a): pass
-
-        def _authed(self):
-            """Password only, no username: a cookie set by a small login page (localhost is exempt)."""
-            pw = AUTH.get("password")
-            if not pw: return True
-            if self.client_address[0] in ("127.0.0.1", "::1"): return True
-            import urllib.parse
-            q = urllib.parse.urlparse(self.path).query
-            key = urllib.parse.parse_qs(q).get("key", [""])[0]
-            if key == pw:
-                self.send_response(302)
-                self.send_header("Set-Cookie", f"ams_key={pw}; Path=/; Max-Age=31536000; SameSite=Lax")
-                self.send_header("Location", "/"); self.send_header("Content-Length", "0"); self.end_headers()
-                return False
-            cookie = self.headers.get("Cookie", "")
-            if f"ams_key={pw}" in cookie: return True
-            page = ("<!doctype html><meta charset=utf-8><meta name=viewport content='width=device-width,initial-scale=1'>"
-                    "<title>AMS Dryness</title><style>body{margin:0;height:100vh;display:flex;align-items:center;"
-                    "justify-content:center;background:#111;color:#eee;font:16px -apple-system,Helvetica,Arial}"
-                    "form{background:#1c1c1e;padding:28px 30px;border-radius:14px;border:1px solid #2a2a2c;width:280px}"
-                    "h1{font-size:18px;margin:0 0 4px}p{color:#999;font-size:13px;margin:0 0 16px}"
-                    "input{width:100%;box-sizing:border-box;padding:11px;border-radius:9px;border:1px solid #444;"
-                    "background:#111;color:#eee;font-size:15px}button{width:100%;margin-top:12px;padding:11px;"
-                    "border:0;border-radius:9px;background:#0a84ff;color:#fff;font-size:15px;font-weight:600;cursor:pointer}"
-                    "</style><form method=POST action=/login><h1>AMS Dryness</h1><p>Enter the password</p>"
-                    "<input type=password name=key autofocus autocomplete=current-password>"
-                    "<button>Open dashboard</button></form>")
-            b = page.encode()
-            self.send_response(401 if "bad" in q else 200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
-            self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
-            return False
-
         def _send(self, code, body, ctype="application/json"):
-            b = body.encode() if isinstance(body, str) else body
-            self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b))); self.send_header("Cache-Control", "no-store"); self.send_header("X-AMS-UI-Version", UI_VERSION); self.end_headers(); self.wfile.write(b)
+            b = body if isinstance(body, bytes) else json.dumps(body).encode()
+            self.send_response(code); self.send_header("Content-Type", ctype); self.send_header("Content-Length", str(len(b)))
+            self.send_header("Cache-Control", "no-store"); self.end_headers(); self.wfile.write(b)
         def do_GET(self):
-            if self.path.startswith("/api/cam.jpg"): cam_snapshot(self)
-            elif self.path.startswith("/api/cam.mjpg"): cam_stream(self)
-            elif self.path.startswith("/api/cam_status"): self._send(200, json.dumps(
-                {"ffmpeg": bool(ffmpeg_bin()), "frames": CAM["frames"], "age": round(now() - (CAM["last"] or 0), 1),
-                 "viewers": len(CAM["clients"]), "running": bool(CAM["proc"] and CAM["proc"].poll() is None)}))
-            elif self.path.startswith("/api/rev"): self._send(200, json.dumps(rev_data()))
-            elif self.path.startswith("/api/state"): self._send(200, json.dumps(report_data()))
-            elif self.path == "/": self._send(200, HTML, "text/html; charset=utf-8")
-            else: self._send(404, "{}")
+            if not host_ok(self.headers.get("Host")): return self._send(421, {"error": "Unknown host."})
+            p = self.path.split("?", 1)[0]
+            if p == "/setup": return self._send(200, page, "text/html; charset=utf-8")
+            if p == "/api/setup/state": return self._send(200, {"setup": True})
+            self.send_response(303); self.send_header("Location", "/setup"); self.send_header("Content-Length", "0"); self.end_headers()
         def do_POST(self):
-            if STANDBY:
-                return self._send(503, json.dumps({"error": "Android host is in standby; use the current dashboard for controls."}))
-            n = int(self.headers.get("Content-Length", 0)); body = json.loads(self.rfile.read(n) or b"{}")
-            with LOCK: self._post(body)
-        def _post(self, body):
-            if self.path == "/api/name": r = do_name(body["id"], body["name"], body.get("material"))
-            elif self.path == "/api/same": r = do_same(body["new_id"], body["old_id"])
-            elif self.path == "/api/dried": r = do_dried(body["id"], float(body["hours"]), float(body["temp"]))
-            elif self.path == "/api/set_spool": r = do_set_spool(body["slot"], body["type"], body.get("name", ""), float(body.get("dried_h") or 0), body.get("dried_temp"), body.get("color", ""))
-            elif self.path == "/api/remove_spool": r = do_remove_spool(body["id"])
-            elif self.path == "/api/print": r = do_print_control(body.get("action"))
-            elif self.path == "/api/control": r = do_control(body)
-            elif self.path == "/api/retry_pullback": r = retry_pullback()
-            elif self.path == "/api/resolve": r = do_resolve(body.get("action"))
-            elif self.path == "/api/read_rfid": r = do_read_rfid(body["ams_id"], body["slot_id"], pause_drying=True)
-            elif self.path == "/api/read_options": r = do_ams_read_options(body.get("on", True))
-            elif self.path == "/api/cancel_read":
-                stg = settings(); (stg.get("cool_read") or {}).pop(body.get("slot"), None); save_settings(stg); r = "ok"
-            elif self.path == "/api/claim": r = do_claim(body["id"], body["from_printer"], body["from_id"])
-            elif self.path == "/api/filament": r = do_filament(body.get("action"), body.get("target", 255))
-            elif self.path == "/api/ams_unload": r = do_ams_unload(body.get("temp", 250))
-            elif self.path == "/api/temp": r = do_temp(body.get("kind"), body.get("value"))
-            elif self.path == "/api/cooldown_heaters": r = do_cooldown_heaters()
-            elif self.path == "/api/preheat": r = do_preheat(body.get("bed", 0), body.get("chamber", 0), body.get("label", ""), body.get("nozzle"))
-            elif self.path == "/api/auto_cooldown":
-                r = "automatic cool-down has been removed; use manual fan controls" if body.get("on") else "ok"
-            elif self.path == "/api/preheat_presets":
-                st = settings(); st["preheat"] = body.get("presets") or {}; save_settings(st); r = "ok"
-            elif self.path == "/api/move_spool": r = do_move_spool(body["id"], body["slot"])
-            elif self.path == "/api/dry_all":
-                units = request_fleet_drying()
-                return self._send(200,json.dumps({"result":"ok","units":units}))
-            elif self.path == "/api/stop_all":
-                st_ = jload(STATE, {}); done = []
-                for aid, a_ in st_.get("ams", {}).items():
-                    if not a_.get("heating") and dry_requests().get(aid, {}).get("status") not in ("pending", "waiting"):
-                        cancel_dry_request(aid, manual_stop=True); continue
-                    res = set_drying(aid, False, manual=True)
-                    done.append(f"{ams_label(aid)}: stopped" if res.startswith("ok") else f"{ams_label(aid)}: {res}")
-                r = "; ".join(done) or "nothing was drying"
-            elif self.path == "/api/cancel_pending":
-                r = set_drying(body.get("ams_id"), False, manual=True)
-            elif self.path == "/api/probe": r = dry_probe(body.get("ams_id", 0), body.get("temp", 55))
-            elif self.path == "/api/dry": r = set_drying(body["ams_id"], bool(body["on"]), body.get("temp", 65), body.get("hours", 8), body.get("rotate", False), manual=True)
-            elif self.path == "/api/psu":
-                st = settings(); st.setdefault("psu", {})[str(body["ams_id"])] = bool(body["on"]); st.get("psu_warn", {}).pop(str(body["ams_id"]), None); st["psu_obs"] = {}; save_settings(st)
-                append(EVENTS, dict(t=now(), time=iso(), kind="AUTO_DRY", slot=f"{body['ams_id']}:*", msg=f"{ams_label(body['ams_id'])}: external PSU {'YES' if body['on'] else 'NO'}")); r = "ok"
-            elif self.path == "/api/auto":
-                st = settings(); st["auto"][str(body["ams_id"])] = bool(body["on"]); save_settings(st)
-                append(EVENTS, dict(t=now(), time=iso(), kind="AUTO_DRY", slot=f"{body['ams_id']}:*", msg=f"{ams_label(body['ams_id'])}: auto-dry {'ON' if body['on'] else 'OFF'}")); r = "ok"
-            else: r = "unknown"
-            self._send(200, json.dumps({"result": r}))
+            try: return self._post()
+            except Exception:
+                import traceback
+                err = traceback.format_exc(); print(err, flush=True)
+                return self._send(500, {"ok": False, "message": "Something went wrong on this computer.", "report": report_url("Setup error", err)})
+        def _post(self):
+            if not host_ok(self.headers.get("Host")) or not json_post_ok(self.headers): return self._send(403, {"ok": False, "message": "Use the setup page."})
+            raw = read_body(self.headers, self.rfile, 64 * 1024)
+            try: body = json.loads(raw or b"{}")
+            except (TypeError, ValueError): body = None
+            if not isinstance(body, dict): return self._send(400, {"ok": False, "message": "Invalid request."})
+            if self.path == "/api/setup/test":
+                ip = str(body.get("ip", "")).strip()
+                try: ipaddress.ip_address(ip)
+                except ValueError: return self._send(200, {"reachable": False, "message": "That IP address doesn't look right."})
+                try:
+                    socket.create_connection((ip, 8883), timeout=3).close()
+                    return self._send(200, {"reachable": True, "message": "Found a printer at " + ip + "."})
+                except OSError:
+                    return self._send(200, {"reachable": False, "message": "No answer from " + ip + ". Check the IP, that LAN Only mode is on, and that this computer is on the printer's network."})
+            if self.path == "/api/setup/check":
+                p, err = check_printer(body.get("printer"), [str(x) for x in body.get("existing") or []])
+                return self._send(200, {"ok": bool(p), "message": err})
+            if self.path == "/api/setup/save":
+                printers, names = [], []
+                for raw_p in (body.get("printers") or [])[:50]:
+                    p, err = check_printer(raw_p, names)
+                    if not p: return self._send(200, {"ok": False, "message": err})
+                    printers.append(p); names.append(p["name"])
+                if not printers: return self._send(200, {"ok": False, "message": "Add at least one printer."})
+                lan = bool(body.get("lan_access")); password = str(body.get("password") or "")
+                if lan and len(password) < 8: return self._send(200, {"ok": False, "message": "Choose a password of at least 8 characters."})
+                cfg = jload(CONFIG, {})
+                if cfg.get("printers"): return self._send(200, {"ok": False, "message": "This dashboard is already set up."})
+                cfg.update(printers=printers, lan_access=lan)
+                cfg.setdefault("lan_name", "printroom")
+                if lan: cfg["auth"] = {"password": password}
+                os.makedirs(os.path.dirname(CONFIG) or ".", exist_ok=True)
+                jsave(CONFIG, cfg)
+                print(f"[{iso()}] setup saved {len(printers)} printer(s); starting the dashboard", flush=True)
+                self._send(200, {"ok": True})
+                # The listening socket is not inherited across exec, so the dashboard can bind the same port.
+                threading.Timer(1.0, lambda: os.execv(sys.executable, [sys.executable] + sys.argv)).start()
+                return
+            self._send(404, {"ok": False, "message": "Not found."})
 
-    srv = http.server.ThreadingHTTPServer(("127.0.0.1", port), H)
-    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
-    print(f"[{iso()}] worker {os.path.basename(BASE)} on http://localhost:{port}", flush=True)
-    if open_browser: webbrowser.open(f"http://localhost:{port}")
+    srv = http.server.ThreadingHTTPServer((bind, PORT), H)
+    url = f"http://localhost:{PORT}/setup"
+    print(f"[{iso()}] first run: open {url} to set up your printers", flush=True)
+    try: webbrowser.open(url)
+    except Exception: pass
     srv.serve_forever()
-
-
-ORCA_USER_GLOB = os.path.expanduser("~/Documents/OrcaSlicer/user/*/filament/base")
-SYNC_LOG = os.path.join(BASE, "filament_sync.log")
-SYNC_SKIP = {"name", "filament_settings_id", "compatible_printers", "compatible_printers_condition",
-             "filament_max_volumetric_speed", "nozzle_temperature", "nozzle_temperature_initial_layer"}
-
-
-def _orca_running():
-    import subprocess
-    try: return bool(subprocess.run(["pgrep", "-x", "OrcaSlicer"], capture_output=True).stdout.strip())
-    except Exception: return False
-
-
-def orca_filament_sync(force=False):
-    """Orca owns profile identities, cloud revisions, and per-printer calibration."""
-    return "nothing to do"
 
 
 def hub(open_browser=False):
     """Multi-printer mode: one worker process per printer (config.json → "printers"), tabbed dashboard on PORT."""
     import threading, http.server, subprocess, webbrowser, urllib.request
     cfg = jload(CONFIG, {})
+    EXTRA_HOSTS.update(str(h).strip().lower() for h in cfg.get("allowed_hosts", []) if str(h).strip())
     printers = cfg.get("printers") or ([dict(name=cfg.get("name", "Printer"), ip=cfg["ip"], serial=cfg["serial"], access_code=cfg["access_code"])] if cfg.get("ip") else [])
-    if not printers: sys.exit("config.json has no printers")
+    if not printers: return setup_wizard()
     workers = {}
     def add_worker(p):
         d = os.path.join(BASE, "printers", p["name"]); os.makedirs(d, exist_ok=True)
-        jsave(os.path.join(d, "config.json"), dict(ip=p["ip"], serial=p["serial"], access_code=p["access_code"], name=p["name"]))
+        jsave(os.path.join(d, "config.json"), dict(ip=p["ip"], serial=p["serial"], access_code=p["access_code"], name=p["name"], allow_unrestricted_jog=bool(p.get("allow_unrestricted_jog"))))
         if not os.path.exists(os.path.join(d, "settings.json")): jsave(os.path.join(d, "settings.json"), dict(auto={}, manual_hold_until={}, auto_started={}))
         used = {w["port"] for w in workers.values()}; port = PORT + 1
         while port in used: port += 1
@@ -7024,9 +7037,9 @@ def hub(open_browser=False):
             error_html = '<p class="error" role="alert">' + html.escape(error) + '</p>' if error else ''
             page = """<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="color-scheme" content="dark"><title>Sign in · Print room</title>
+<meta name="color-scheme" content="dark"><title>Sign in · printing_farmlord</title>
 <style>*{box-sizing:border-box}body{margin:0;min-height:100vh;min-height:100dvh;display:grid;place-items:center;padding:24px;background:#0e1618;color:#edf3f2;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}main{width:100%;max-width:380px;padding:28px;background:#1b2528;border:1px solid #344448;border-radius:16px}h1{font-size:25px;margin:0 0 8px}p{color:#adbec0;font-size:14px;line-height:1.5;margin:0 0 24px}label{display:block;font-size:14px;margin-bottom:8px}input{display:block;width:100%;font:inherit;padding:13px 14px;color:#edf3f2;background:#0e1618;border:1px solid #53666b;border-radius:9px}input:focus{outline:2px solid #ace4d0;outline-offset:2px}button{width:100%;min-height:48px;margin-top:18px;border:0;border-radius:9px;background:#ace4d0;color:#102721;font:600 16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;cursor:pointer}button:focus-visible{outline:2px solid #edf3f2;outline-offset:3px}.error{color:#ffaaa6;margin:16px 0 0}</style></head>
-<body><main><h1>Print room</h1><p>Sign in to your printers.</p>
+<body><main><h1 style="display:flex;align-items:center;gap:10px"><svg class="madking" viewBox="0 0 64 64" width="40" height="40" role="img" aria-label="Mad king logo" xmlns="http://www.w3.org/2000/svg"><g transform="rotate(-14 32 14)"><path d="M14 22 L12 6 L21 14 L27 2 L33 13 L41 3 L44 15 L52 7 L50 22 Z" fill="#f5c542" stroke="#8a5a00" stroke-width="2" stroke-linejoin="round"/><circle cx="27" cy="2.5" r="2.4" fill="#e23b3b"/><circle cx="41" cy="3.5" r="2.4" fill="#3b7be2"/><circle cx="12" cy="6" r="2" fill="#3be27b"/><circle cx="52" cy="7" r="2" fill="#e23b3b"/><rect x="18" y="16" width="5" height="4" rx="1" fill="#e23b3b"/><rect x="38" y="16" width="5" height="4" rx="1" fill="#3b7be2"/></g><path d="M12 40 Q8 58 22 62 L26 56 L30 63 L34 56 L38 63 L42 56 L46 61 Q57 56 52 40 Z" fill="#b5651d" stroke="#5e300a" stroke-width="2" stroke-linejoin="round"/><circle cx="32" cy="36" r="17" fill="#f2c094" stroke="#7a4a24" stroke-width="2"/><path d="M15 28 L26 33 M37 31 L50 24" stroke="#2a1a0a" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="37" r="6" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="42" cy="36" r="4" fill="#fff" stroke="#2a1a0a" stroke-width="1.5"/><circle cx="26" cy="39" r="2.4" fill="#111"/><circle cx="40.5" cy="34.5" r="1.6" fill="#111"/><path d="M22 45 Q32 41 44 46 L42 52 Q32 49 24 52 Z" fill="#5b1010" stroke="#2a1a0a" stroke-width="1.5" stroke-linejoin="round"/><path d="M24 46.5 L42 46.5 M27 44.5 V48 M31 43.5 V48 M35 43.5 V48 M39 44.5 V48" stroke="#fff" stroke-width="1.6"/><path d="M50 30 l4 -1 M51 33 l5 1 M49 27 l3 -3" stroke="#e23b3b" stroke-width="2" stroke-linecap="round"/><path d="M14 22 q-3 3 -2 6 M50 22 q3 3 2 6" stroke="#9aa" stroke-width="1.5" fill="none"/></svg><span>printing_farmlord</span></h1><p>Sign in to your printers.</p>
 <form method="post" action="/login" autocomplete="on">
 <input type="hidden" name="username" autocomplete="username" value="__USERNAME__">
 <label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
@@ -7072,6 +7085,7 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
             except Exception as e: self._send(503, json.dumps({"error": "Printer service is reconnecting; retry shortly."}))
         def do_GET(self):
             self._t0 = time.time()
+            if not host_ok(self.headers.get("Host")): return self._send(421, json.dumps({"error": "Unknown host."}))
             if self.path.split("?", 1)[0] == "/login": return self._login_page()
             if not self._authed(): return
             if self.path.startswith("/api/p/") and "/api/cam.jpg" in self.path:
@@ -7101,7 +7115,7 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                         up.close()
                 except Exception: pass
                 return
-            if self.path == "/": self._send(200, HTML, "text/html; charset=utf-8")
+            if self.path == "/": self._send(200, HTML.replace("configured store", store_name() or "configured store"), "text/html; charset=utf-8")
             elif self.path.split("?", 1)[0] == "/movement": self._send(200, MOVEMENT_HTML, "text/html; charset=utf-8")
             elif self.path == "/api/attention": self._send(200, json.dumps(attention.snapshot()))
             elif self.path == "/api/filament_stock": self._send(200, json.dumps(stock_inventory.snapshot()))
@@ -7130,13 +7144,14 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 label = next((v for k, v in nets.items() if ip and ip.startswith(k)), "Unknown network")
                 reach = {n: any(p["ip"].rsplit(".", 1)[0] == (ip or "").rsplit(".", 1)[0] or p["ip"].split(".")[:2] == (ip or "").split(".")[:2] for _ in [0]) for n, w in workers.items() for p in [jload(os.path.join(w["dir"], "config.json"), {})]}
                 self._send(200, json.dumps({"ip": ip, "label": label, "printers_here": reach}))
-            elif self.path == "/api/printers": self._send(200, json.dumps([dict(name=n, port=w["port"], config=jload(os.path.join(w["dir"], "config.json"), {})) for n, w in workers.items()]))
+            elif self.path == "/api/printers": self._send(200, json.dumps([dict(name=n, port=w["port"], config=public_printer_config(jload(os.path.join(w["dir"], "config.json"), {}))) for n, w in workers.items()]))
             elif self.path.startswith("/api/p/"): self._proxy()
             else: self._send(404, "{}")
         def do_POST(self):
             if STANDBY:
                 return self._send(503, json.dumps({"error": "Android host is in standby; use the current dashboard for controls."}))
             self._t0 = time.time()
+            if not host_ok(self.headers.get("Host")): return self._send(421, json.dumps({"error": "Unknown host."}))
             if self.path == "/login":
                 import urllib.parse
                 origin = self.headers.get("Origin")
@@ -7146,12 +7161,18 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 except ValueError: return self._login_page("Please enter your password again.")
                 if n < 0 or n > 4096: return self._send(413, "Request too large", "text/plain")
                 form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", errors="replace"))
+                ip = self.client_address[0]; fails = LOGIN_FAILS.get(ip)
+                if fails and fails[1] > time.time(): return self._login_page("Too many attempts. Wait a minute and try again.")
                 key = form.get("password", [""])[0]
                 user = form.get("username", [""])[0]
                 ok = hmac.compare_digest(key.encode(), str(AUTH.get("password") or "").encode())
                 if AUTH.get("user"):
                     ok = ok and hmac.compare_digest(user.encode(), str(AUTH["user"]).encode())
-                if not ok: return self._login_page("Incorrect password. Please try again.")
+                if not ok:
+                    fails = LOGIN_FAILS.setdefault(ip, [0, 0.0]); fails[0] += 1
+                    if fails[0] >= 5: fails[0] = 0; fails[1] = time.time() + 60
+                    return self._login_page("Incorrect password. Please try again.")
+                LOGIN_FAILS.pop(ip, None)
                 payload = str(int(time.time()) + SESSION_AGE) + "." + secrets.token_hex(16)
                 token = payload + "." + sign_session(payload)
                 self.send_response(303)
@@ -7162,7 +7183,10 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 self.send_header("Content-Length", "0"); self.end_headers()
                 return
             if not self._authed(): return
-            n = int(self.headers.get("Content-Length", 0)); body = self.rfile.read(n)
+            if not json_post_ok(self.headers): return self._send(403, json.dumps({"error": "Use the dashboard to make changes."}))
+            body = read_body(self.headers, self.rfile)
+            if body is None: return self._send(413, json.dumps({"error": "Request too large."}))
+            n = len(body)
             if self.path == "/api/filament_stock":
                 import urllib.parse
                 origin = self.headers.get('Origin')
@@ -7230,6 +7254,7 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
             elif self.path == "/api/add_printer":
                 p = json.loads(body); p = {k: str(p.get(k, "")).strip() for k in ("name", "ip", "serial", "access_code")}
                 if not all(p.values()): return self._send(200, json.dumps({"result": "all four fields are required"}))
+                if not printer_name_ok(BASE, p["name"]): return self._send(200, json.dumps({"result": "use a simple name without slashes or a leading dot"}))
                 if p["name"] in workers: return self._send(200, json.dumps({"result": "a printer with that name already exists"}))
                 c = jload(CONFIG, {}); c.setdefault("printers", []).append(p); jsave(CONFIG, c); add_worker(p)
                 self._send(200, json.dumps({"result": "ok"}))
@@ -7238,7 +7263,9 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 p = json.loads(body); old = p.get("old_name"); w = workers.get(old)
                 if not w: return self._send(200, json.dumps({"result": "unknown printer"}))
                 new = {k: str(p.get(k, "")).strip() for k in ("name", "ip", "serial", "access_code")}
+                if not new["access_code"]: new["access_code"] = jload(os.path.join(w["dir"], "config.json"), {}).get("access_code", "")
                 if not all(new.values()): return self._send(200, json.dumps({"result": "all four fields are required"}))
+                if not printer_name_ok(BASE, new["name"]): return self._send(200, json.dumps({"result": "use a simple name without slashes or a leading dot"}))
                 if new["name"] != old and new["name"] in workers: return self._send(200, json.dumps({"result": "that name is already used"}))
                 if w["proc"]: w["proc"].terminate(); w["proc"].wait(timeout=10)
                 d = w["dir"]
@@ -7246,7 +7273,8 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                     nd = os.path.join(BASE, "printers", new["name"]); shutil.move(d, nd); d = nd
                     workers[new["name"]] = workers.pop(old)
                 w = workers[new["name"]]; w.update(dir=d, proc=None)
-                jsave(os.path.join(d, "config.json"), dict(new))
+                jog = any(x.get("allow_unrestricted_jog") for x in jload(CONFIG, {}).get("printers", []) if x.get("name") == old)
+                jsave(os.path.join(d, "config.json"), dict(new, allow_unrestricted_jog=jog))
                 c = jload(CONFIG, {}); c["printers"] = [dict(x, **new) if x["name"] == old else x for x in c.get("printers", [])]; jsave(CONFIG, c)
                 self._send(200, json.dumps({"result": "ok"}))
             elif self.path == "/api/reorder":
