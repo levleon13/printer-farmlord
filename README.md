@@ -1,4 +1,4 @@
-# Print room kit
+# Printer Farmlord
 
 Local Bambu H2/AMS print-room dashboard, drying tracker and controls, plus the edited OrcaSlicer profiles and the G-code bridge-anchor post-processor. The dashboard supports multiple printers, RFID spool tracking, drying requests, cameras, stock, alerts and print controls. Nothing in this repository connects to the original print room: add your own LAN credentials during setup.
 
@@ -8,14 +8,14 @@ On the machine that can reach your printers (macOS, Linux, or Termux with Python
 
 ```sh
 git clone <YOUR_PRIVATE_REPO_URL>
-cd print-room-kit
+cd printer-farmlord
 ./scripts/install.sh
 ./scripts/start.sh
 ```
 
 The installer creates a virtual environment, installs `paho-mqtt`, and prompts for each printer's **label, LAN IP, serial, and LAN access code**. It writes those only to ignored `.runtime/config.json`. On each printer, enable LAN Only/Developer Mode and copy the details from its network screen. Open `http://127.0.0.1:8765` on the host. To open the dashboard on another device, choose LAN access during setup, set a password, and use the host's LAN IP on port 8765. A firewall may need to allow that port.
 
-For Termux, first run `pkg install python ffmpeg`, then the same commands. To start on boot, install Termux:Boot and add a boot script that runs `cd /path/to/print-room-kit && ./scripts/start.sh`; keep the path local to that phone. For any always-on host, use your service manager to supervise `scripts/start.sh`. `AMS_STANDBY=1 ./scripts/start.sh` starts telemetry-only mode; the normal start enables controls. Test the first printer before adding the rest.
+For Termux, first run `pkg install python ffmpeg`, then the same commands. To start on boot, install Termux:Boot and add a boot script that runs `cd /path/to/printer-farmlord && ./scripts/start.sh`; keep the path local to that phone. For any always-on host, use your service manager to supervise `scripts/start.sh`. `AMS_STANDBY=1 ./scripts/start.sh` starts telemetry-only mode; the normal start enables controls. Test the first printer before adding the rest.
 
 Stop with Control-C. To add or edit printers later, use dashboard Settings. `.runtime/config.json` and every spool, log, recording and event file stay local. Back up `.runtime/` privately if you need to preserve history.
 
@@ -36,7 +36,7 @@ The installer backs up colliding JSON files inside that user directory and write
 
 The bridge-anchor script is `fix_bridge_anchor.py`. It modifies qualifying internal solid-infill loops in generated G-code. It requires relative extrusion and leaves unknown patterns untouched. Review sample slices and printer compatibility before relying on any imported profile or post-processor.
 
-If Orca runs on a different network from the printers, set up SSH access to the dashboard host, install `sshuttle` locally, then run `PRINT_ROOM_SSH_HOST=your-ssh-alias ./scripts/connect_orca_remote.sh`. It reads the printer IP list from the remote checkout's private config. The remote checkout must be at `~/print-room-kit`. For Termux, set `PRINT_ROOM_SSHUTTLE_PYTHON=/data/data/com.termux/files/usr/bin/python`. Keep the tunnel terminal open while using Orca.
+If Orca runs on a different network from the printers, set up SSH access to the dashboard host, install `sshuttle` locally, then run `PRINT_ROOM_SSH_HOST=your-ssh-alias ./scripts/connect_orca_remote.sh`. It reads the printer IP list from the remote checkout's private config. The remote checkout must be at `~/printer-farmlord`. For Termux, set `PRINT_ROOM_SSHUTTLE_PYTHON=/data/data/com.termux/files/usr/bin/python`. Keep the tunnel terminal open while using Orca.
 
 ## What is where
 

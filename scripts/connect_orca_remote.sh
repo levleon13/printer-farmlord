@@ -14,7 +14,7 @@ mapfile_compat < <(ssh "$PRINT_ROOM_SSH_HOST" 'python3 -' <<'PY'
 import ipaddress
 import json
 from pathlib import Path
-config = Path.home() / 'print-room-kit' / '.runtime' / 'config.json'
+config = Path.home() / 'printer-farmlord' / '.runtime' / 'config.json'
 for printer in json.loads(config.read_text())['printers']:
     address = ipaddress.ip_address(printer['ip'])
     if address.version != 4 or not address.is_private:

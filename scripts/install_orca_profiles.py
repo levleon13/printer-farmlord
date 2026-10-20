@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
     target = args.orca_user.expanduser().resolve()
-    backup = target / ("backup-before-print-room-kit-" + time.strftime("%Y%m%d-%H%M%S"))
+    backup = target / ("backup-before-printer-farmlord-" + time.strftime("%Y%m%d-%H%M%S"))
     kinds = ["machine", "filament", "process"]
     rows = []
     for kind in kinds:
