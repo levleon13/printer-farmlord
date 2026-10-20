@@ -89,6 +89,59 @@ printers. Treat it accordingly, and **do not forward port 8765 to the
 internet**. To reach it from outside, use a private network such as
 [Tailscale](https://tailscale.com) and open `http://<host-tailscale-ip>:8765`.
 
+## Walkthrough: an old Android phone as the server, reached over Tailscale
+
+A spare Android phone left in the print room makes a quiet, low-power server.
+[Tailscale](https://tailscale.com) (free for personal use) lets you open the
+dashboard from anywhere without opening any ports.
+
+**On the phone that stays with the printers**
+
+1. Connect it to the same Wi-Fi as the printers, and plug it in.
+2. Install **Tailscale** from the Play Store, sign in and switch it on. Note
+   the phone's Tailscale address (`100.x.y.z`) and device name shown in the app.
+3. Install **Termux** from [F-Droid](https://f-droid.org/packages/com.termux/)
+   (the Play Store build is outdated).
+4. In Android settings, turn off battery optimisation for Termux and Tailscale.
+5. Open Termux and paste:
+
+   ```
+   pkg install -y python ffmpeg git && git clone https://github.com/levleon13/printer-farmlord.git && cd printer-farmlord && ./scripts/start.sh
+   ```
+
+6. After about a minute the setup page opens in the phone's browser (if it
+   doesn't, open `http://localhost:8765/setup` yourself):
+   - **Step 1:** add each printer, using **Test connection** to check it.
+   - **Step 2:** tick **Let other devices on my network open it** and choose a
+     password. Without this, the dashboard only answers on the phone itself and
+     Tailscale can't reach it.
+   - Click **Finish**.
+
+**On your own phone or laptop**
+
+Install Tailscale, sign in to the same Tailscale account, and open
+`http://100.x.y.z:8765` (or `http://<device-name>:8765`). Sign in with the
+password from step 2.
+
+**Start automatically after a reboot (optional)**
+
+Install **Termux:Boot**, open it once, then run this in Termux:
+
+```
+mkdir -p ~/.termux/boot && printf '#!/data/data/com.termux/files/usr/bin/bash\ncd ~/printer-farmlord && ./scripts/start.sh\n' > ~/.termux/boot/farmlord && chmod +x ~/.termux/boot/farmlord
+```
+
+`start.sh` keeps Termux awake on its own, so the dashboard keeps running with
+the screen off.
+
+**Rather set it up from a laptop?** Start it with
+`AMS_SETUP_LAN=1 ./scripts/start.sh` and open
+`http://<phone-tailscale-ip>:8765/setup` from a laptop on the same Tailscale
+network. The setup page has no password until you finish, so only do this on a
+network you trust.
+
+## Which addresses work
+
 The dashboard only answers requests addressed to an IP address or a local name
 (`localhost`, a bare host name, `*.local`, `*.lan`, `*.home.arpa`, `*.internal`,
 `*.ts.net`). To use another DNS name, add it to `.runtime/config.json`:
