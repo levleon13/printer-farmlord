@@ -25,8 +25,10 @@ def files(staged):
         p = subprocess.run(["git", "diff", "--cached", "--name-only", "--diff-filter=d", "-z"], cwd=ROOT,
                            capture_output=True, check=True)
         return [ROOT / x.decode() for x in p.stdout.split(b"\0") if x]
-    return [p for p in ROOT.rglob("*") if p.is_file() and not any(
-        part in {".git", ".venv", ".runtime", "__pycache__"} for part in p.relative_to(ROOT).parts)]
+    # Everything Git would publish: tracked files plus new files that are not ignored.
+    p = subprocess.run(["git", "ls-files", "-z", "--cached", "--others", "--exclude-standard"], cwd=ROOT,
+                       capture_output=True, check=True)
+    return [ROOT / x.decode() for x in p.stdout.split(b"\0") if x and (ROOT / x.decode()).is_file()]
 
 
 def read(path, staged):
