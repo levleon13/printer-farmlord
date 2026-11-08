@@ -776,6 +776,30 @@ def dry_wait_context(aid, state):
             has_psu(settings(), aid)]
 
 
+def printer_error_signature(state):
+    """What must change before a printer in an error state is worth asking again."""
+    return [state.get("print_error") or 0,
+            sorted(f"{h.get('attr')}:{h.get('code')}" for h in state.get("hms") or [] if isinstance(h, dict))]
+
+
+def dry_error_state_hold(w, state):
+    """True while a request refused with ERROR STATE should keep waiting: same alerts, and under 5 minutes."""
+    return (w.get("status") == "waiting" and w.get("err") == DRY_ERROR_STATE and
+            printer_error_signature(state) == w.get("error_sig") and now() - w.get("last", 0) < 300)
+
+
+def printer_alerts_text(state):
+    """The printer's active HMS alerts, in Bambu's words where we know them."""
+    out = []
+    for h in state.get("hms") or []:
+        if not isinstance(h, dict): continue
+        try: full = f"{_code4(h.get('attr', 0))}_{_code4(h.get('code', 0))}"
+        except (TypeError, ValueError): continue
+        text = errdb()["hms"].get(full.replace("_", ""))
+        out.append(f"HMS {full}" + (f" ({text.rstrip('.')})" if text else ""))
+    return "; ".join(out)
+
+
 def dry_block(aid, w, message):
     w.update(status="blocked", message=message, failed_at=now())
     if "filament" in message.lower() and "outlet" in message.lower():
@@ -815,17 +839,33 @@ def drying_reply(pr):
             try: err = int(pr.get("err_code") or 0)
             except (ValueError, TypeError): err = 0
             w.update(err=err, sf=sf, accepted=False, err_text=dry_err_text(err))
-            if 3 in sf and queue_drying_unload(aid,w,state): pass
+            alerts = printer_alerts_text(state)
+            if err == DRY_ERROR_STATE:
+                # The printer refuses every command while an alert is active. Don't use up a try; ask again
+                # when its alerts or print error change, or every 5 minutes (dry_error_state_hold).
+                w["attempts"] = max(0, w.get("attempts", 1) - 1)
+                w.update(status="waiting", error_sig=printer_error_signature(state), last=now(),
+                         message="The printer refused: it is in an error state. " +
+                                 (f"Active alert: {alerts}. " if alerts else "Check the printer screen for the alert. ") +
+                                 "Clear it on the printer (or restart it); drying starts again by itself.")
+            elif 3 in sf and queue_drying_unload(aid,w,state): pass
             elif 3 in sf or 10 in sf:
                 dry_block(aid, w, "The printer reports filament in the AMS outlet. Drying is paused because the printer has not cleared its outlet interlock.")
             elif err in DRY_WAIT_CODES or (sf and set(sf).issubset({0, 1, 2, 4, 6})):
                 w.update(status="waiting", wait_context=dry_wait_context(aid, state),
                          message="Waiting for the printer or drying power to become available")
             elif w.get("attempts", 0) >= DRY_MAX_ATTEMPTS:
-                dry_block(aid, w, "The printer refused to start drying after three attempts. Check its screen for the cause, then retry. Automatic retries are stopped.")
+                dry_block(aid, w, f"The printer refused to start drying after three attempts ({dry_refusal_reason(err, alerts)}). Automatic retries are stopped.")
+                w.pop("block_kind", None)   # quoted alert text may mention the outlet; this is not an outlet block
             else:
-                w.update(status="pending", message=f"Printer refused drying — attempt {w.get('attempts', 1)} of {DRY_MAX_ATTEMPTS}")
+                w.update(status="pending", message=f"Printer refused drying ({dry_refusal_reason(err, alerts)}) — attempt {w.get('attempts', 1)} of {DRY_MAX_ATTEMPTS}")
         jsave(DRY_REQUESTS, requests)
+
+
+def dry_refusal_reason(err, alerts=""):
+    text = dry_err_text(err) if err else None
+    why = (f"code {_code4(err)}" + (f": {text.rstrip('.')}" if text else "")) if err else "no reason given"
+    return why + (f"; printer alert: {alerts}" if alerts else "")
 
 
 def drying_faults(state):
@@ -870,6 +910,7 @@ def higher_priority_drying_unit(aid, state, stg, spools, requests):
         if w.get("status") in ("pending", "waiting"):
             if w.get("accepted") or w.get("attempts", 0) >= DRY_MAX_ATTEMPTS: continue
             if w.get("status") == "waiting" and w.get("reply_received") and w.get("err") in DRY_WAIT_CODES and dry_wait_context(other, state) == w.get("wait_context"): continue
+            if dry_error_state_hold(w, state): continue
             delay = 20 if w.get("reply_received") or w.get("status") == "waiting" else 90
             if now()-w.get("last", 0) < delay: continue
         else:
@@ -1112,6 +1153,9 @@ def do_ams_read_options(on=True):
 
 
 READ_MAX_TEMP = 45      # the AMS will not spin a spool for a tag read while it is hot from drying
+READ_COOL_WAIT = 900    # s an AMS may take to cool after drying stops (an AMS HT at 85 °C needs minutes)
+READ_GAP = 6            # s between one slot's scan ending and the next request; back-to-back requests get ignored
+READ_TRIES = 3          # requests per slot before skipping it
 RFID_HEAT_CYCLES = P("rfid_heat_cycles.json")
 
 
@@ -1159,8 +1203,8 @@ def rfid_heat_cycle_tick():
             if stage == "stopping":
                 if not ams_is_drying(a) and ams_info_bits(a.get("info"),4,4)==0 and (a.get("temp") or 999)<=READ_MAX_TEMP:
                     w.update(stage="scan", stage_at=now()); changed=True
-                elif elapsed>120:
-                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} did not cool to {READ_MAX_TEMP}°C within two minutes; restoring drying"))
+                elif elapsed>READ_COOL_WAIT:
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} did not cool to {READ_MAX_TEMP}°C within {READ_COOL_WAIT//60} minutes; restoring drying"))
                     w.update(stage="resume",stage_at=now());changed=True
             elif stage == "unload":
                 # Save the command sequence before publishing so a restart cannot
@@ -1230,7 +1274,7 @@ def rfid_heat_cycle_tick():
                     changed=True;continue
                 slot=str(w["slots"][0]);tray=a.get("trays",{}).get(slot,{})
                 if not w.get("sent_at"):
-                    if filament_busy(settings()):continue
+                    if filament_busy(settings()) or now()-w.get("last_done",0)<READ_GAP:continue
                     if ams_is_drying(a) or ams_info_bits(a.get("info"),4,4)!=0:
                         rfid_finish_scans(cycles,aid,w)
                         changed=True;continue
@@ -1245,17 +1289,23 @@ def rfid_heat_cycle_tick():
                         w["seen_tray_busy"]=True;changed=True
                     elapsed_scan=now()-w["sent_at"]
                     if not w.get("seen_reading") and elapsed_scan>12:
-                        append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} slot {int(slot)+1}: printer acknowledged the request but did not start a scan"))
-                        rfid_finish_scans(cycles,aid,w);changed=True;continue
+                        tries=w.setdefault("tries",{});tries[slot]=tries.get(slot,1)+1
+                        if tries[slot]<=READ_TRIES:
+                            append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} slot {int(slot)+1}: printer did not start the scan; asking again ({tries[slot]}/{READ_TRIES})"))
+                        else:
+                            append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} slot {int(slot)+1}: printer would not scan after {READ_TRIES} requests; skipped, continuing with the next slot"))
+                            w["slots"].pop(0);tries.pop(slot,None)
+                        for field in ("sent_at","seen_reading","seen_tray_busy","initial_rfid","scan_until_before"):w.pop(field,None)
+                        w["last_done"]=now();changed=True;continue
                     done=(w.get("seen_reading") and not tray.get("reading") and
                           ((w.get("seen_tray_busy") and tray.get("read_done")) or
                            (tray.get("rfid") and tray.get("rfid")!=w.get("initial_rfid")))) or elapsed_scan>45
                     if done:
                         outcome="tag read" if tray.get("rfid") and w.get("seen_reading") else "scan ended without a readable tag" if w.get("seen_reading") else "scan did not finish"
                         append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} slot {int(slot)+1}: {outcome}"))
-                        w["slots"].pop(0)
+                        w["slots"].pop(0);(w.get("tries") or {}).pop(slot,None)
                         for field in ("sent_at","seen_reading","seen_tray_busy","initial_rfid","scan_until_before"):w.pop(field,None)
-                        changed=True
+                        w["last_done"]=now();changed=True
             elif stage == "clear_outlet":
                 # Some H2 printers report a separate AMS-outlet interlock even
                 # after the nozzle has been unloaded. The native command for the
@@ -1366,7 +1416,8 @@ def do_read_rfid(ams_id, slot_id, pause_drying=False):
         if state.get("print_state") not in ("IDLE","FINISH","FAILED") or (state.get("print_state")=="FAILED" and unresolved_print_fault(state)): return "the printer is busy — tag reads wait until idle"
         if slot not in a.get("trays",{}):return "that AMS slot is unavailable"
         cycles=jload(RFID_HEAT_CYCLES,{}) or {}
-        if aid in cycles:
+        restored=cycles.get(aid) if cycles.get(aid,{}).get("stage")=="active" and pause_drying else None
+        if aid in cycles and not restored:
             w=cycles[aid]
             if slot not in w.get("slots",[]) and w.get("stage") in ("stopping","unload","scan"):
                 w.setdefault("slots",[]).append(slot);cycles[aid]=w;jsave(RFID_HEAT_CYCLES,cycles)
@@ -1376,13 +1427,17 @@ def do_read_rfid(ams_id, slot_id, pause_drying=False):
             setting=a.get("dry_setting") or {}
             temp=int(setting.get("dry_temperature") or 0)
             if not 45<=temp<=UNIT_MAX(aid):return "the current drying target is unavailable; cannot restore it safely"
-            remaining=a.get("dry_time")
+            # A cycle restored after an earlier read runs on rounded-up firmware hours; keep its exact countdown.
+            remaining=rfid_dry_time(aid,a.get("dry_time"),cycles)
             if not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or remaining<=0:return "the remaining drying time is unavailable; cannot restore it safely"
             hours=max(1,min(24,int(math.ceil(float(remaining)/60))))
             cycles[aid]=dict(stage="stopping",stage_at=now(),pause_at=now(),slots=[slot],temp=temp,hours=hours,remaining_min=float(remaining),rotate=False,restore_dry=True)
             jsave(RFID_HEAT_CYCLES,cycles)
             result=set_drying(aid,False)
-            if result!="ok":cycles.pop(aid,None);jsave(RFID_HEAT_CYCLES,cycles);return result
+            if result!="ok":
+                if restored:cycles[aid]=restored
+                else:cycles.pop(aid,None)
+                jsave(RFID_HEAT_CYCLES,cycles);return result
             append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: pausing drying for RFID read; will resume {temp}°C with {math.ceil(remaining)} min left"))
             return "ok"
         if ams_is_drying(a) or (a.get("temp") or 0)>READ_MAX_TEMP:return "wait until drying finishes and the AMS cools before reading the tag"
@@ -2361,6 +2416,7 @@ def dry_pending_tick():
                 continue
             if w.get("status")=="waiting" and w.get("reply_received") and w.get("err") in DRY_WAIT_CODES and dry_wait_context(aid,state)==w.get("wait_context"):
                 continue
+            if dry_error_state_hold(w,state):continue
             delay=20 if w.get("reply_received") or w.get("status")=="waiting" else 90
             if now()-w.get("last",0)<delay:continue
             jsave(DRY_REQUESTS,requests)
@@ -2634,6 +2690,7 @@ def dry_err_text(code):
 
 # The printer is telling us to wait, not that anything is broken. Retrying harder
 # cannot help and unloading filament is actively wrong.
+DRY_ERROR_STATE = 0x05024027  # "ERROR STATE": an active printer alert blocks every new command
 DRY_WAIT_CODES = {
     0x03004013,  # printing cannot start while an AMS is drying
     0x05004040,  # no power for drying during printing
@@ -4101,7 +4158,7 @@ header{max-width:1440px;padding:22px 28px;margin:auto;align-items:center;gap:20p
 .room-shared-route.is-stale .route-flow{display:none}
 @media(prefers-reduced-motion:reduce){.room-filament-path .route-flow{display:none}}
 
-.room-shared-route{isolation:isolate}.room-shared-route>.room-filament-path{z-index:1}.room-shared-route .room-unit{position:relative}.room-shared-route .room-nozzle-junction{position:relative;height:82px;color:var(--fg)}.room-nozzle-junction>[data-nozzle-anchor]{position:absolute;width:24px;height:30px;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;background:transparent}.room-nozzle-junction>span{position:absolute;left:calc(50% + 24px);right:0;top:50%;transform:translateY(-50%);font-size:10px;line-height:1.5;color:var(--mute)}.room-nozzle-junction b{display:block;font-weight:500;color:var(--fg);overflow-wrap:anywhere}.room-shared-route .room-unit-below{display:flex;flex-direction:column;align-items:stretch;border-top:0;margin-top:0;padding-top:0;gap:10px}.room-shared-route .room-unit-below>.room-unit-label{order:2}.room-shared-route .room-unit-below>.room-spools{width:100%;margin-top:0}.room-filament-path .route-idle{fill:none;stroke:var(--mute);stroke-opacity:.2;stroke-width:1;stroke-linejoin:round;stroke-linecap:round}
+.room-shared-route{isolation:isolate}.room-shared-route>.room-filament-path{z-index:1}.room-shared-route>.ams>:not(.room-spools){position:relative;z-index:2}.room-shared-route>.ams>.unit{background:var(--card);border-radius:8px}.room-shared-route .room-unit{position:relative}.room-shared-route .room-nozzle-junction{position:relative;height:82px;color:var(--fg)}.room-nozzle-junction>[data-nozzle-anchor]{position:absolute;width:24px;height:30px;left:50%;top:50%;transform:translate(-50%,-50%);z-index:2;background:transparent}.room-nozzle-junction>span{position:absolute;left:calc(50% + 24px);right:0;top:50%;transform:translateY(-50%);font-size:10px;line-height:1.5;color:var(--mute)}.room-nozzle-junction b{display:block;font-weight:500;color:var(--fg);overflow-wrap:anywhere}.room-shared-route .room-unit-below{display:flex;flex-direction:column;align-items:stretch;border-top:0;margin-top:0;padding-top:0;gap:10px}.room-shared-route .room-unit-below>.room-unit-label{order:2}.room-shared-route .room-unit-below>.room-spools{width:100%;margin-top:0}.room-filament-path .route-idle{fill:none;stroke:var(--mute);stroke-opacity:.2;stroke-width:1;stroke-linejoin:round;stroke-linecap:round}
 
 .room-power{display:flex;justify-content:flex-end;margin:-8px 0 14px;color:var(--mute);font-size:15px;font-variant-numeric:tabular-nums}.room-power>span{padding:4px 0}
 
@@ -5898,7 +5955,7 @@ async function dropTab(e,el){e.preventDefault();el.classList.remove('over');cons
   const order=PRINTERS.map(x=>x.name);const from=order.indexOf(DRAG),ti=order.indexOf(to);order.splice(from,1);order.splice(ti,0,DRAG);
   PRINTERS.sort((a,b)=>order.indexOf(a.name)-order.indexOf(b.name));renderTabs();
   await fetch('/api/reorder',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({order})});DRAG=null;}
-function selectPrinter(n){if(DLG)return;if(ROOM_VIEW==='detail'&&P===n&&!arguments[1]){roomShow('watch');return;}ROOM_VIEW='detail';document.body.classList.remove('room-drying-view');roomStopSnapshots();$('#room-home').hidden=true;$('#printer-detail').hidden=false;$('#banner').hidden=false;$('#room-watch').setAttribute('aria-pressed','false');$('#room-drying').setAttribute('aria-pressed','false');const img=document.getElementById('camimg');if(img)img.src='';P=n;D=null;PC_DATA_PRINTER=null;try{localStorage.setItem('ams_printer',n)}catch(e){};renderTabs();renderCam();renderCtl();renderFansStatus();renderPrinterFilamentMap();$('#slots').innerHTML='';$('#events').innerHTML='';closeAttention();load();layoutQueueMeasure();uiReveal($('#printer-detail'));}
+function selectPrinter(n){if(DLG)return;if(ROOM_VIEW==='detail'&&P===n&&!arguments[1]){roomShow('watch');return;}ROOM_VIEW='detail';document.body.classList.remove('room-drying-view');document.body.classList.add('room-detail-view');roomStopSnapshots();$('#room-home').hidden=true;$('#printer-detail').hidden=false;$('#banner').hidden=false;$('#room-watch').setAttribute('aria-pressed','false');$('#room-drying').setAttribute('aria-pressed','false');const img=document.getElementById('camimg');if(img)img.src='';P=n;D=null;PC_DATA_PRINTER=null;try{localStorage.setItem('ams_printer',n)}catch(e){};renderTabs();renderCam();renderCtl();renderFansStatus();renderPrinterFilamentMap();$('#slots').innerHTML='';$('#events').innerHTML='';closeAttention();load();layoutQueueMeasure();uiReveal($('#printer-detail'));}
 function openMovementWindow(name=P){if(!name)return;window.open('/movement?printer='+encodeURIComponent(name),'_blank','width=1100,height=760,resizable=yes,scrollbars=yes');}
 function cls(s){if(!s)return'empty';return s.pct>=100?'ok':s.pct>=60?'warn':'bad'}
 function ago(ts){const d=(Date.now()-new Date(ts.replace(' ','T')))/1000;if(d<60)return'just now';if(d<3600)return Math.round(d/60)+' min ago';if(d<86400)return(d/3600).toFixed(1)+' h ago';return ts;}
