@@ -2072,6 +2072,53 @@ def plate_resume_tick():
                         msg=f"Build plate offset warning: automatic resume attempt {attempts + 1}/2 ({result})"))
 
 
+NOZZLE_MISMATCH_ERRORS = {0x05008053, 0x05FE8053, 0x05FF8053}   # nozzle (both / left / right) not matched with slicing file
+NOZZLE_RESUME = P("nozzle_resume.json")
+
+
+def nozzle_resume_tick():
+    """Answer the nozzle-mismatch pause with "Ignore this and Resume" (Bambu Studio's command_hms_ignore).
+    The printer sometimes misreads the installed nozzle. At most two tries per error code and six per print job; nothing else is touched."""
+    if STANDBY: return
+    st = jload(STATE, {})
+    try: code = int(st.get("print_error") or 0)
+    except (TypeError, ValueError): code = 0
+    record = jload(NOZZLE_RESUME, {}) or {}
+    job = f"{st.get('job_id') or ''}|{st.get('job_started') or ''}|{st.get('print_name') or ''}"
+    state = st.get("print_state")
+    if record and (record.get("job") != job or state in ("IDLE", "FINISH", "FAILED")):
+        record = {}; jsave(NOZZLE_RESUME, {})            # a new or finished job starts with a clean count
+    if state != "PAUSE" or code not in NOZZLE_MISMATCH_ERRORS:
+        if record.get("code"): jsave(NOZZLE_RESUME, dict(job=job, tried=record.get("tried") or {}))
+        return
+    if STATUS.get("mqtt") != "connected" or not MQTT.get("client") or not MQTT.get("topic_req"): return
+    connected = STATUS.get("since", 0)
+    if any(not connected <= st.get(k, 0) <= now() or now() - st.get(k, 0) > 120
+           for k in ("t", "print_state_t", "print_error_t")): return
+    for h in st.get("hms") or []:
+        try:
+            if ((int(h.get("code") or 0) >> 16) & 0xffff) == 1: return   # a fatal alert needs a person
+        except (TypeError, ValueError, AttributeError): return
+    tried = record.get("tried") or {}
+    if tried.get(str(code), 0) >= 2 or sum(tried.values()) >= 6: return   # per job: 2 per code, 6 in all
+    if record.get("code") != code:
+        jsave(NOZZLE_RESUME, dict(job=job, code=code, first_seen=now(), attempts=0, tried=tried)); return
+    attempts = int(record.get("attempts", 0))
+    if attempts == 0 and now() - record.get("first_seen", now()) < 4: return
+    if attempts and now() - record.get("attempted_at", now()) < 15: return
+    # Record the attempt before publishing, so a restart never repeats an ambiguous command.
+    tried = dict(tried); tried[str(code)] = tried.get(str(code), 0) + 1
+    jsave(NOZZLE_RESUME, dict(record, attempts=attempts + 1, attempted_at=now(), tried=tried))
+    try:
+        MQTT["client"].publish(MQTT["topic_req"], json.dumps({"print": {
+            "sequence_id": "0", "command": "ignore", "err": str(code), "param": "reserve", "job_id": str(st.get("job_id") or "")}}))
+        result = "sent"
+    except Exception as exc: result = f"failed: {exc}"
+    side = {0x05FE8053: "left nozzle", 0x05FF8053: "right nozzle"}.get(code, "nozzle")
+    append(EVENTS, dict(t=now(), time=iso(), kind="AUTO_NOZZLE_IGNORE",
+                        msg=f"Nozzle mismatch {_code4(code)} ({side} vs slicing file): ignore and continue, attempt {tried[str(code)]}/2 ({result})"))
+
+
 def do_preheat(bed, chamber, label="", nozzle=None):
     with FAN_CONTROL_LOCK:
         return _do_preheat(bed, chamber, label, nozzle)
@@ -3319,6 +3366,10 @@ def mqtt_loop():
                 if "hms" in pr: tr.state["hms"] = pr.get("hms") or []
                 if "print_error" in pr:
                     tr.state["print_error"] = pr.get("print_error") or 0; tr.state["print_error_t"] = now()
+        if "job_id" in pr or "gcode_start_time" in pr:
+            with LOCK:
+                if "job_id" in pr: tr.state["job_id"] = str(pr.get("job_id") or "")
+                if "gcode_start_time" in pr: tr.state["job_started"] = str(pr.get("gcode_start_time") or "")
         if "fan_gear" in pr:
             # Bambu Studio DevFan::ParseV1_0: packed bytes are native 0..255 speeds.
             gear = int(pr["fan_gear"])
@@ -6890,6 +6941,8 @@ def serve(open_browser=False, port=None):
                 except Exception as e: print(f"[{iso()}] camera resume error {e}", flush=True)
                 try: plate_resume_tick()
                 except Exception as e: print(f"[{iso()}] plate resume error {e}", flush=True)
+                try: nozzle_resume_tick()
+                except Exception as e: print(f"[{iso()}] nozzle ignore error {e}", flush=True)
                 time.sleep(2)
         threading.Thread(target=camera_resume_thread, daemon=True).start()
     def fan_timer_thread():
