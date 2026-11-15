@@ -872,7 +872,7 @@ def drying_faults(state):
     faults = []
     for aid, w in dry_requests().items():
         if w.get("status") != "blocked" or (ams_is_drying(state.get("ams", {}).get(aid, {})) and not w.get("safety_stop_sent")): continue
-        label = f"AMS {int(aid)+1}" if int(aid) < 128 else f"AMS HT {int(aid)-127}"
+        label = ams_name(aid)
         faults.append(dict(code=f"DRYING_{aid}_{w.get('failed_at', 0)}", text=f"{label}: Drying blocked. {w['message']}",
                            blocking=True, process="drying", ams_id=aid))
     return faults
@@ -1187,6 +1187,13 @@ def rfid_finish_scans(cycles, aid, w):
     else:cycles.pop(aid,None)
 
 
+def rfid_restore_refused(aid, w):
+    """set_drying reports a definite refusal as "ok — <reason>" and marks the request blocked,
+    either at once or after its own retries; only a block raised since this restore counts."""
+    req = dry_requests().get(str(aid)) or {}
+    return req.get("status") == "blocked" and (req.get("failed_at") or 0) >= (w.get("resume_sent") or now())
+
+
 def rfid_heat_cycle_tick():
     """Finish an explicitly requested scan, then restore the interrupted AMS cycle."""
     with DRY_LOCK:
@@ -1200,6 +1207,16 @@ def rfid_heat_cycle_tick():
             if not a: continue
             stage = w.get("stage")
             elapsed = now()-w.get("stage_at", now())
+            feed = ams_feeding_nozzle(state, aid) if stage == "scan" else None
+            if feed and w.get("allow_unload") and not w.get("sent_at") and not w.get("auto_unloaded") and not rfid_auto_unload_blocker(state, feed):
+                w.update(stage="unload",stage_at=now(),auto_unloaded=True);changed=True
+                append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: slot {feed['slot']+1} is loaded in {feed['nozzle']}; unloading it before the tag read"))
+                continue
+            if feed:
+                append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: tag read cancelled — "+feeding_block_text(aid,feed)))
+                for field in ("sent_at","seen_reading","seen_tray_busy","initial_rfid","scan_until_before"):w.pop(field,None)
+                rfid_finish_scans(cycles,aid,w)
+                changed=True;continue
             if stage == "stopping":
                 if not ams_is_drying(a) and ams_info_bits(a.get("info"),4,4)==0 and (a.get("temp") or 999)<=READ_MAX_TEMP:
                     w.update(stage="scan", stage_at=now()); changed=True
@@ -1209,8 +1226,14 @@ def rfid_heat_cycle_tick():
             elif stage == "unload":
                 # Save the command sequence before publishing so a restart cannot
                 # send a second filament-cutter operation while the first is pending.
-                if str(state.get("tray_now"))=="255" and state.get("ams_status")==0 and not ams_is_drying(a):
-                    w.update(stage="scan",stage_at=now());changed=True;continue
+                if not ams_feeding_nozzle(state, aid) and state.get("ams_status")==0 and not ams_is_drying(a):
+                    if set(a.get("dry_sf") or []) & {3, 10}:
+                        if not w.get("outlet_wait"):w["outlet_wait"]=now();changed=True
+                        if now()-w["outlet_wait"]<90:continue
+                    w.pop("outlet_wait",None)
+                    if w.get("unload_sent_at"):
+                        append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: nozzle unloaded; reading the tag"))
+                    w.update(stage="scan",stage_at=now(),last_done=now());changed=True;continue
                 if w.get("unload_reply")=="fail" and w.get("unload_error")==-9 and not w.get("drying_refusal_retry"):
                     # Firmware explicitly refused because the loaded spool's AMS
                     # is drying. A confirmed refusal is safe to retry after stopping
@@ -1223,6 +1246,9 @@ def rfid_heat_cycle_tick():
                     rfid_finish_scans(cycles,aid,w)
                     changed=True;continue
                 if w.get("unload_sent_at"):continue
+                if elapsed>600:
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: the AMS never became ready to unload the nozzle; tag read cancelled"))
+                    rfid_finish_scans(cycles,aid,w);changed=True;continue
                 if ams_is_drying(a) or (a.get("temp") or 999)>READ_MAX_TEMP or ams_info_bits(a.get("info"),4,4)!=0:continue
                 if state.get("ams_status")!=0 or filament_busy(settings()) or now()<state.get("scan_until",0):continue
                 blocked=toolhead_safe(state)
@@ -1232,30 +1258,15 @@ def rfid_heat_cycle_tick():
                         rfid_finish_scans(cycles,aid,w)
                         changed=True
                     continue
-                loaded=int(state["tray_now"])
-                loaded_aid=next((int(k) for k in state.get("ams",{}) if int(k)*4<=loaded<int(k)*4+4),None)
-                if loaded_aid is None:continue
-                if loaded_aid!=int(aid):
-                    source=state["ams"][str(loaded_aid)]
-                    if ams_is_drying(source):
-                        if not w.get("source_restore"):
-                            source_aid=str(loaded_aid)
-                            remaining=rfid_dry_time(source_aid,source.get("dry_time"),cycles)
-                            temp=int((source.get("dry_setting") or {}).get("dry_temperature") or 0)
-                            if not isinstance(remaining,(int,float)) or remaining<=0 or not 45<=temp<=UNIT_MAX(source_aid):continue
-                            original=cycles.pop(source_aid,None)
-                            w["source_restore"]=dict(aid=source_aid,temp=temp,
-                                hours=max(1,min(24,int(math.ceil(remaining/60)))),remaining_min=float(remaining),rotate=False,pause_at=now())
-                            cycles[aid]=w;jsave(RFID_HEAT_CYCLES,cycles)
-                            result=set_drying(source_aid,False)
-                            if result!="ok":
-                                if original:cycles[source_aid]=original
-                                w.pop("source_restore",None);changed=True
-                            else:
-                                append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(source_aid)}: pausing loaded spool's dryer for automatic unload"))
-                                changed=True
-                        continue
-                    if (source.get("temp") or 999)>READ_MAX_TEMP or ams_info_bits(source.get("info"),4,4)!=0:continue
+                feed=ams_feeding_nozzle(state, aid)
+                why=rfid_auto_unload_blocker(state, feed) if feed else None
+                if why:
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: tag read cancelled — "+feeding_block_text(aid,feed)+f" ({why})"))
+                    rfid_finish_scans(cycles,aid,w);changed=True;continue
+                if dry_unload_busy():continue
+                if not w.get("allow_unload"):
+                    rfid_finish_scans(cycles,aid,w);changed=True;continue
+                loaded_aid=int(aid)
                 sequence=str(time.time_ns()%2147483647)
                 w.update(unload_sequence=sequence,unload_sent_at=now());cycles[aid]=w;jsave(RFID_HEAT_CYCLES,cycles)
                 payload={"print":{"sequence_id":sequence,"command":"ams_change_filament","ams_id":loaded_aid,
@@ -1264,7 +1275,7 @@ def rfid_heat_cycle_tick():
                     result=MQTT["client"].publish(MQTT["topic_req"],json.dumps(payload))
                     if getattr(result,"rc",0)!=0:raise RuntimeError("publish failed")
                     mark_filament_busy(30)
-                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: retracting loaded filament before tag read"))
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: unloading the nozzle before the tag read"))
                 except Exception:
                     # Delivery is ambiguous, so do not automatically retry.
                     w["unload_reply"]="fail";changed=True
@@ -1310,10 +1321,15 @@ def rfid_heat_cycle_tick():
                 # Some H2 printers report a separate AMS-outlet interlock even
                 # after the nozzle has been unloaded. The native command for the
                 # target AMS clears it; observe the printer state, not just its ACK.
-                if 3 not in (a.get("dry_sf") or []) and str(state.get("tray_now"))=="255" and state.get("ams_status")==0:
+                if ams_is_drying(a) or (not set(a.get("dry_sf") or []) & {3, 10} and str(state.get("tray_now"))=="255" and state.get("ams_status")==0):
                     w.update(stage="resume",stage_at=now(),outlet_cleared=True);changed=True;continue
                 if w.get("outlet_reply")=="fail" or (w.get("outlet_sent_at") and now()-w["outlet_sent_at"]>300):
                     append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} outlet did not clear; saved drying restart is blocked by the printer"))
+                    cycles.pop(aid);changed=True;continue
+                if not w.get("outlet_sent_at") and ams_feeding_nozzle(state, aid):
+                    w.update(stage="resume",stage_at=now());changed=True;continue
+                if not w.get("outlet_sent_at") and elapsed>900:
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: the AMS outlet could not be cleared safely, so the paused drying was not restarted — start it again from the dashboard"))
                     cycles.pop(aid);changed=True;continue
                 if w.get("outlet_sent_at"):continue
                 if str(state.get("tray_now"))!="255" or state.get("ams_status")!=0:continue
@@ -1332,22 +1348,53 @@ def rfid_heat_cycle_tick():
                     # A lost ACK is ambiguous; do not repeat a filament operation.
                     w["outlet_reply"]="fail";changed=True
             elif stage == "resume":
-                if 3 in (a.get("dry_sf") or []) and not w.get("outlet_cleared"):
-                    w.update(stage="clear_outlet",stage_at=now());changed=True;continue
                 if ams_is_drying(a):
                     rfid_resume_tracking(w, a)
                     append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} drying restored with {math.ceil(float(w.get('remaining_min') or w['hours']*60))} min remaining"))
                     changed=True;continue
+                feed = ams_feeding_nozzle(state, aid)
+                outlet = set(a.get("dry_sf") or []) & {3, 10}
+                if feed and outlet:
+                    # The printer will not dry while this AMS's filament sits in its outlet. Wait without
+                    # resending (each refused attempt raises an alert) and resume once it is unloaded.
+                    if not w.get("hold_since"):
+                        w["hold_since"]=now();changed=True
+                        append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: paused drying stays off while slot {feed['slot']+1} is loaded in {feed['nozzle']} — the printer won't dry with filament in the AMS outlet. It restarts by itself after you unload."))
+                    elif now()-w["hold_since"]>24*3600:
+                        append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: filament stayed loaded for 24 h, so the paused drying was dropped — start it again from the dashboard if needed"))
+                        cycles.pop(aid);changed=True
+                    continue
+                if w.get("hold_since"):
+                    for field in ("hold_since","outlet_cleared","outlet_sent_at","outlet_reply","outlet_error","outlet_sequence"):w.pop(field,None)
+                    w["stage_at"]=now();elapsed=0;changed=True
+                if outlet and not w.get("outlet_cleared"):
+                    w.update(stage="clear_outlet",stage_at=now());changed=True;continue
                 if elapsed>900:
                     append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} drying restart is pending; check the printer if it does not resume"))
                     cycles.pop(aid);changed=True;continue
                 if w.get("resume_sent") and now()-w["resume_sent"]<30:continue
                 # The printer's own target and remaining timer were captured before stop.
-                result=set_drying(aid,True,w["temp"],w["hours"],w.get("rotate",False),resume_saved=True)
+                if w.get("starts_sent",0)>=3:
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: the drying restart was sent 3 times but the AMS never started heating; start it again from the dashboard"))
+                    cancel_dry_request(aid,automatic_stop=True);cycles.pop(aid);changed=True;continue
                 w["resume_sent"]=now();changed=True
+                result=set_drying(aid,True,w["temp"],w["hours"],w.get("rotate",False),resume_saved=True)
+                if (dry_requests().get(str(aid)) or {}).get("status")=="pending":
+                    # A START was actually published (waits publish nothing). Each resume builds a fresh
+                    # request, so cap the sends here or an accepted-but-never-heating AMS loops forever.
+                    w["starts_sent"]=w.get("starts_sent",0)+1
+                if rfid_restore_refused(aid,w):
+                    # set_drying answers "ok — <reason>" for a definite refusal and has already raised
+                    # one alert; retrying would only repeat it.
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: the printer refused to restart the drying paused for the tag read; start it again from the dashboard once the reason above is cleared"))
+                    cycles.pop(aid);continue
                 if result.startswith("ok") or result.startswith("already drying"):
                     w.update(stage="confirm",stage_at=now())
             elif stage == "confirm":
+                if not ams_is_drying(a) and rfid_restore_refused(aid,w):
+                    # The printer refused through its replies (dry_pending_tick gave up and raised the alert).
+                    append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: the printer refused to restart the drying paused for the tag read; start it again from the dashboard once the reason above is cleared"))
+                    cycles.pop(aid);changed=True;continue
                 if ams_is_drying(a):
                     rfid_resume_tracking(w, a)
                     append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)} drying restored with {math.ceil(float(w.get('remaining_min') or w['hours']*60))} min remaining"))
@@ -1372,13 +1419,60 @@ def rfid_heat_cycle_tick():
         if changed: jsave(RFID_HEAT_CYCLES, cycles)
 
 
+def ams_feeding_nozzle(state, aid):
+    """The nozzle holding filament from this AMS, if any. The AMS cannot turn a spool to
+    scan its tag while its own filament runs through the outlet into the toolhead; the
+    firmware still ACKs ams_get_rfid with success and simply never scans."""
+    aid = int(aid); route = state.get("nozzle_routing")
+    if route is not None:
+        info = route.get("info") or {}
+        for nid, item in info.items():
+            try: snow = int(item["snow"])
+            except (KeyError, TypeError, ValueError): continue
+            if not 0 <= snow <= 65535 or (snow & 255) == 255 or ((snow >> 8) & 255) != aid: continue
+            try:
+                if item.get("info") is not None and not (int(item["info"]) & 2): continue
+            except (TypeError, ValueError): continue
+            name = ("the right nozzle" if str(nid) == "0" else "the left nozzle") if len(info) > 1 else "the nozzle"
+            return dict(slot=snow & 255, nozzle=name, nid=str(nid), multi=len(info) > 1)
+        return None
+    if len(state.get("env", {}).get("nozzles", [])) > 1: return None
+    try: tray = int(state.get("tray_now"))
+    except (TypeError, ValueError): return None
+    if tray < 0 or tray in (254, 255): return None
+    unit, slot = (tray, 0) if 128 <= tray <= 135 else divmod(tray, 4)
+    return dict(slot=slot, nozzle="the nozzle") if unit == aid else None
+
+
+def rfid_auto_unload_blocker(state, feed):
+    """The native unload (ams_change_filament target 255) lets the firmware pick the nozzle,
+    so only automate it when the filament to remove is in the active nozzle."""
+    if not feed.get("multi"): return None
+    try: active = (int((state.get("nozzle_routing") or {})["state"]) >> 4) & 15
+    except (KeyError, TypeError, ValueError): return "the printer has not said which nozzle is active"
+    if str(active) != feed.get("nid"): return f"it is in {feed['nozzle']}, which is not the active nozzle"
+    return None
+
+
+def rfid_unload_notice(aid, feed):
+    return (f"Unloading {ams_name(aid)} slot {feed['slot']+1} from {feed['nozzle']} first; the tag read starts by itself "
+            f"when it's out. The filament stays unloaded afterwards.")
+
+
+def feeding_block_text(aid, feed):
+    return (f"{ams_name(aid)} can't read tags while its slot {feed['slot']+1} filament is loaded in "
+            f"{feed['nozzle']}. Unload it (Unload on slot {feed['slot']+1}), then press Read RFID again.")
+
+
 OUTLET_CLEARS = {}   # ams id -> [send times]; guards against repeating a filament operation
 
 
 def ams_name(ams_id):
-    """The unit name as the dashboard shows it: AMS 1, AMS 2, AMS HT 1."""
+    """The unit name as the printer screen shows it: AMS A, AMS B, AMS HT A."""
     i = int(ams_id)
-    return f"AMS HT {i-127}" if i >= 128 else f"AMS {i+1}"
+    n = i - 128 if i >= 128 else i                     # the printer screen letters units: AMS A, AMS B, AMS HT A
+    letter = chr(65 + n) if 0 <= n < 26 else str(n + 1)
+    return f"AMS HT {letter}" if i >= 128 else f"AMS {letter}"
 
 
 def clear_ams_outlet(aid, state, a):
@@ -1409,18 +1503,41 @@ def clear_ams_outlet(aid, state, a):
     return "sent"
 
 
-def do_read_rfid(ams_id, slot_id, pause_drying=False):
+def do_read_rfid(ams_id, slot_id, pause_drying=False, user=False):
+    """user=True only for an explicit Read RFID press: only then may a loaded nozzle be unloaded
+    (that works the filament cutter). Background retries never unload."""
     with DRY_LOCK:
         aid=str(int(ams_id));slot=str(int(slot_id));state=jload(STATE,{});a=state.get("ams",{}).get(aid,{})
         if STATUS.get("mqtt")!="connected" or now()-state.get("t",0)>120: return "waiting for fresh printer status"
         if state.get("print_state") not in ("IDLE","FINISH","FAILED") or (state.get("print_state")=="FAILED" and unresolved_print_fault(state)): return "the printer is busy — tag reads wait until idle"
         if slot not in a.get("trays",{}):return "that AMS slot is unavailable"
+        feed=ams_feeding_nozzle(state,aid)
+        if feed:
+            why=rfid_auto_unload_blocker(state,feed) if user else "only a Read RFID press unloads automatically"
+            if why:return feeding_block_text(aid,feed)+(f" (It can't be unloaded automatically: {why}.)" if user else "")
         cycles=jload(RFID_HEAT_CYCLES,{}) or {}
+        held=cycles.get(aid) or {}
+        if feed and held.get("stage")=="resume" and held.get("hold_since") and not ams_is_drying(a):
+            # A drying restore is waiting for exactly this filament to leave; unload it, read, then restore.
+            if filament_busy(settings()) or dry_unload_busy():return "waiting for the current filament operation to finish"
+            if any(w.get("status")=="pending" for w in dry_requests().values()):return "waiting for the drying request to finish"
+            blocked=toolhead_safe(state)
+            if blocked:return f"{ams_name(aid)} slot {feed['slot']+1} has to be unloaded before the tag read, but it isn't safe right now: {blocked}"
+            for field in ("hold_since","outlet_cleared","outlet_sent_at","outlet_reply","outlet_error","outlet_sequence",
+                          "unload_sequence","unload_sent_at","unload_reply","unload_error","drying_refusal_retry",
+                          "resume_sent","starts_sent","tries","sent_at","last_done"):held.pop(field,None)
+            held.update(stage="unload",stage_at=now(),slots=[slot],auto_unloaded=True,allow_unload=True)
+            cycles[aid]=held;jsave(RFID_HEAT_CYCLES,cycles)
+            return rfid_unload_notice(aid,feed)+" The paused drying restarts after the read."
         restored=cycles.get(aid) if cycles.get(aid,{}).get("stage")=="active" and pause_drying else None
         if aid in cycles and not restored:
             w=cycles[aid]
             if slot not in w.get("slots",[]) and w.get("stage") in ("stopping","unload","scan"):
-                w.setdefault("slots",[]).append(slot);cycles[aid]=w;jsave(RFID_HEAT_CYCLES,cycles)
+                w.setdefault("slots",[]).append(slot)
+                if user:w["allow_unload"]=True
+                cycles[aid]=w;jsave(RFID_HEAT_CYCLES,cycles)
+            if w.get("stage") not in ("stopping","unload","scan"):
+                return f"{ams_name(aid)} is still restoring the drying it paused for the last tag read; try again once that finishes."
             return "ok"
         if ams_is_drying(a) and pause_drying:
             if not MQTT.get("client"):return "printer not connected"
@@ -1431,7 +1548,7 @@ def do_read_rfid(ams_id, slot_id, pause_drying=False):
             remaining=rfid_dry_time(aid,a.get("dry_time"),cycles)
             if not isinstance(remaining,(int,float)) or not math.isfinite(remaining) or remaining<=0:return "the remaining drying time is unavailable; cannot restore it safely"
             hours=max(1,min(24,int(math.ceil(float(remaining)/60))))
-            cycles[aid]=dict(stage="stopping",stage_at=now(),pause_at=now(),slots=[slot],temp=temp,hours=hours,remaining_min=float(remaining),rotate=False,restore_dry=True)
+            cycles[aid]=dict(stage="stopping",stage_at=now(),pause_at=now(),slots=[slot],temp=temp,hours=hours,remaining_min=float(remaining),rotate=False,restore_dry=True,allow_unload=bool(user))
             jsave(RFID_HEAT_CYCLES,cycles)
             result=set_drying(aid,False)
             if result!="ok":
@@ -1440,6 +1557,14 @@ def do_read_rfid(ams_id, slot_id, pause_drying=False):
                 jsave(RFID_HEAT_CYCLES,cycles);return result
             append(EVENTS,dict(t=now(),time=iso(),kind="RFID",msg=f"{ams_label(aid)}: pausing drying for RFID read; will resume {temp}°C with {math.ceil(remaining)} min left"))
             return "ok"
+        if feed and not ams_is_drying(a):
+            if filament_busy(settings()) or dry_unload_busy():return "waiting for the current filament operation to finish"
+            if any(w.get("status")=="pending" for w in dry_requests().values()):return "waiting for the drying request to finish"
+            blocked=toolhead_safe(state)
+            if blocked:return f"{ams_name(aid)} slot {feed['slot']+1} has to be unloaded before the tag read, but it isn't safe right now: {blocked}"
+            cycles[aid]=dict(stage="unload",stage_at=now(),slots=[slot],restore_dry=False,auto_unloaded=True,allow_unload=True)
+            jsave(RFID_HEAT_CYCLES,cycles)
+            return rfid_unload_notice(aid,feed)
         if ams_is_drying(a) or (a.get("temp") or 0)>READ_MAX_TEMP:return "wait until drying finishes and the AMS cools before reading the tag"
         busy=[r for r in (a.get("dry_sf") or []) if r in (2, 3, 4, 7, 10)]
         if busy and set(busy) <= {3, 10}:
@@ -1456,7 +1581,7 @@ def do_read_rfid(ams_id, slot_id, pause_drying=False):
         if a.get("temp") is None or ams_info_bits(a.get("info"),4,4) != 0:return "waiting for the AMS to be idle and cool"
         if filament_busy(settings()):return "waiting for the filament operation to finish"
         if any(w.get("status")=="pending" for w in dry_requests().values()):return "waiting for the drying request to finish"
-        cycles[aid]=dict(stage="scan",stage_at=now(),slots=[slot],restore_dry=False)
+        cycles[aid]=dict(stage="scan",stage_at=now(),slots=[slot],restore_dry=False,allow_unload=bool(user))
         jsave(RFID_HEAT_CYCLES,cycles)
         return "ok"
 
@@ -2389,7 +2514,7 @@ def drying_prepare_tick():
                 wait("Waiting for this AMS's current drying or cooling cycle to finish");continue
             power_owner = dry_slot_taken_by(aid,state,stg)
             if power_owner is not None:
-                wait(f"Waiting for AMS {int(power_owner)+1} to release the shared printer drying power");continue
+                wait(f"Waiting for {ams_name(power_owner)} to release the shared printer drying power");continue
             if any(x.get("status")=="pending" for x in requests.values()):
                 wait("Waiting for the current drying request before retracting filament");continue
             if w.get("unload_sent"):
@@ -2832,7 +2957,7 @@ def current_printer_action(state):
     if ps in ("PREPARE","SLICING"):return "Preparing the print"
     if ps=="RUNNING":return "Printing"+(f" · {state['print_pct']}% complete" if state.get("print_pct") is not None else "")
     if unresolved_print_fault(state):return "Printer stopped — check the alert below"
-    active=[("AMS "+str(int(aid)+1) if int(aid)<128 else "AMS HT "+str(int(aid)-127)) for aid,a in state.get("ams",{}).items() if ams_is_drying(a)]
+    active=[ams_name(aid) for aid,a in state.get("ams",{}).items() if ams_is_drying(a)]
     if active:return "Drying filament · "+", ".join(active)
     env=state.get("env",{})
     warming=[name for key,name in (("bed","bed"),("chamber","chamber"),("nozzle","nozzle")) if env.get(key) is not None and env.get(key+"_target") is not None and env[key+"_target"]>env[key]+3]
@@ -2968,7 +3093,7 @@ def estimated_power(state):
         heater("nozzle"+str(nozzle.get("id",index)),"Nozzle "+str(index+1),nozzle.get("temp"),nozzle.get("target"),15,.16,110,surrounding,90,15)
     stg=settings()
     for aid,unit in state.get("ams",{}).items():
-        label="AMS "+str(int(aid)+1) if int(aid)<128 else "AMS HT "+str(int(aid)-127)
+        label=ams_name(aid)
         if not ams_is_drying(unit):
             add(label,5 if unit.get("dry_status") in (3,4) else 2);continue
         # Firmware sub-status 0 is heater off, even within an active drying cycle.
@@ -3390,6 +3515,9 @@ def mqtt_loop():
                 if k in pr:
                     value = fnum(pr[k])
                     if value is not None: f[dst] = max(0, min(255, math.floor(value / 1.5) * 25.5))
+        if "nozzle_diameter" in pr:
+            try: tr.state.setdefault("env", {})["nozzle_diameter"] = round(float(pr["nozzle_diameter"]), 2)
+            except (TypeError, ValueError): pass
         if any(k in pr for k in ("bed_temper", "chamber_temper", "nozzle_temper")):
             env = tr.state.setdefault("env", {})
             for k, dst in (("bed_temper", "bed"), ("bed_target_temper", "bed_target"), ("chamber_temper", "chamber"),
@@ -3413,13 +3541,21 @@ def mqtt_loop():
                 except Exception: continue
                 cur, tgt = v & 0xFFFF, (v >> 16) & 0xFFFF  # packed target 0 means heater off
                 if cur > 500: continue                       # nonsense packing, skip
-                noz.append(dict(id=e.get("id"), temp=cur, target=tgt,
+                noz.append(dict(id=e.get("id"), temp=cur, target=tgt, hnow=e.get("hnow"),
                                 active=bool(e.get("stat")) or bool(e.get("filam_bak"))))
             if noz:
                 env["nozzles"] = noz
                 hot = max(noz, key=lambda n: (n["active"], n["temp"]))
                 env["nozzle"] = hot["temp"]
                 if hot.get("target") is not None: env["nozzle_target"] = hot["target"]
+            ninfo = (dev.get("nozzle") or {}).get("info") if isinstance(dev.get("nozzle"), dict) else None
+            if isinstance(ninfo, list):
+                sizes = {}
+                for z in ninfo:
+                    if not isinstance(z, dict): continue
+                    try: sizes[str(int(z.get("id")))] = dict(d=round(float(z.get("diameter")), 2), type=str(z.get("type") or "")[:8])
+                    except (TypeError, ValueError): continue
+                if sizes: env["nozzle_info"] = sizes
             ctc = (dev.get("ctc") or {}).get("info", {}).get("temp")
             if ctc is not None:
                 cur, tgt = unpack(ctc); env["chamber"], env["chamber_target"] = cur, tgt; env["chamber_on"] = (dev.get("ctc") or {}).get("state")
@@ -3750,6 +3886,60 @@ class FilamentInventory:
             return self.snapshot()
 
 
+OFFLINE_ALERT_AFTER = 300
+
+
+def refind_printers(workers, config_path, base):
+    """When the office network hands a printer a new address, follow it: listen for the printers' own
+    broadcasts (UDP 2021), match by serial number, and re-point a printer that has been unreachable for a minute."""
+    import socket, urllib.request
+    last = {}
+    while True:
+        try:
+            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM); s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            s.bind(("", 2021)); s.settimeout(5)
+        except OSError as e:
+            print(f"[{iso()}] printer re-find: cannot listen ({e}); retrying in 5 min", flush=True); time.sleep(300); continue
+        try:
+            while True:
+                try: data, (src, _) = s.recvfrom(4096)
+                except socket.timeout: continue
+                text = data.decode(errors="ignore")
+                usn = next((l.split(":", 1)[1].strip().upper() for l in text.splitlines() if l.lower().startswith("usn:")), "")
+                if not usn: continue
+                try: ipaddress.ip_address(src)
+                except ValueError: continue
+                cfg = jload(config_path, {})
+                p = next((x for x in cfg.get("printers", []) if str(x.get("serial", "")).upper() == usn), None)
+                if not p or p.get("ip") == src or time.time() - last.get(usn, 0) < 300: continue
+                w = workers.get(p["name"])
+                if not w: continue
+                try:
+                    with urllib.request.urlopen(f"http://127.0.0.1:{w['port']}/api/rev", timeout=3) as r:
+                        if json.loads(r.read()).get("mqtt") == "connected": continue
+                except Exception: pass
+                st = jload(os.path.join(w["dir"], "state.json"), {})
+                if time.time() - float((st.get("t") or 0)) < 60: continue      # it only just dropped; give it a minute
+                last[usn] = time.time()
+                body = json.dumps(dict(old_name=p["name"], name=p["name"], ip=src, serial=p["serial"], access_code="")).encode()
+                req = urllib.request.Request(f"http://127.0.0.1:{PORT_HUB[0]}/api/edit_printer", data=body,
+                                             headers={"Content-Type": "application/json"}, method="POST")
+                try:
+                    with urllib.request.urlopen(req, timeout=30) as r: result = json.loads(r.read()).get("result")
+                except Exception as e: result = f"failed: {e}"
+                print(f"[{iso()}] printer re-find: {p['name']} answered from a new address; updated ({result})", flush=True)
+                try: append(os.path.join(base, "audit.jsonl"), dict(t=time.time(), time=iso(), who="auto", what=f"re-found {p['name']} at its new address ({result})"))
+                except OSError: pass
+        except Exception as e:
+            print(f"[{iso()}] printer re-find error {e}", flush=True); time.sleep(30)
+        finally:
+            try: s.close()
+            except Exception: pass
+
+
+PORT_HUB = [8765]
+
+
 class AttentionCenter:
     """Hub-owned incident tracking: one Mac alert regardless of open browser tabs."""
     def __init__(self, base, port, inventory=None):
@@ -3772,6 +3962,7 @@ class AttentionCenter:
         self.last_focus = 0
         self.last_native_error = None
         self.connection_since = {}
+        self.offline_since = {}
         self.native = sys.platform == 'darwin'
         self.inventory = inventory
 
@@ -3807,6 +3998,22 @@ class AttentionCenter:
                     if not url.startswith('https://e.bambulab.com/'): url = ''
                     wanted[printer+'|'+code] = dict(printer=printer, code=code,
                         severity='error', message=str(fault.get('text') or 'The printer stopped because of a fault. Check its screen for recovery steps.'), url=url, blocking=True)
+            # A printer that stops answering for 5 minutes raises a warning; all of them at once raise one alert.
+            for printer, report in reports.items():
+                if report and report.get('mqtt') == 'connected': self.offline_since.pop(printer, None)
+                else: self.offline_since.setdefault(printer, stamp)
+            for printer in list(self.offline_since):
+                if printer not in reports: self.offline_since.pop(printer)
+            offline = sorted(p for p, t in self.offline_since.items() if stamp - t >= OFFLINE_ALERT_AFTER)
+            if offline and len(reports) > 1 and len(offline) == len(reports):
+                since = time.strftime('%H:%M', time.localtime(min(self.offline_since.values())))
+                wanted['farm|OFFLINE'] = dict(printer='All printers', code='OFFLINE_ALL', severity='error', blocking=False, url='',
+                    message=f"None of the {len(reports)} printers has answered since {since}. Check the office Wi-Fi and the printers' power.")
+            else:
+                for printer in offline:
+                    since = time.strftime('%H:%M', time.localtime(self.offline_since[printer]))
+                    wanted[printer+'|OFFLINE'] = dict(printer=printer, code='OFFLINE', severity='warning', blocking=False, url='',
+                        message=f"Not answering since {since}. Check its power and Wi-Fi.")
             if self.inventory:
                 for item in self.inventory.snapshot()['items']:
                     if item['low']:
@@ -4548,6 +4755,7 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
 .desk-sensor{display:flex;align-items:center;gap:7px;font-size:12px;flex-wrap:wrap}
 .desk-sensor>i{height:7px;width:7px;border-radius:50%;flex:none}
 .desk-sensor small{font-size:9px;color:var(--mute)}
+.nz-size{font-size:11px;font-weight:700;color:#ffd166;border:1px solid #ffd16655;border-radius:6px;padding:0 5px;line-height:16px}
 .desk-thermal-row>strong{text-align:right;font-size:15px;font-weight:550;font-variant-numeric:tabular-nums}
 .desk-thermal-row>strong>small{font-size:10px;font-weight:400;color:var(--mute)}
 .desk-target{position:relative;text-align:right;font-size:12px}
@@ -4625,9 +4833,6 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
 #printer-detail .printer-materials .card .acts>button{padding:6px;font-size:10px;flex:1;line-height:1.3}
 #printer-detail .printer-materials .card summary{font-size:10px;padding:5px 0}
 #printer-detail .printer-materials .room-nozzle-junction{height:56px}
-#printer-detail .printer-materials .ams-below>.grid{order:0}
-#printer-detail .printer-materials .ams-below>.unit{order:1;padding:10px 0 0}
-#printer-detail .printer-materials .ams-below>.legend{order:2;margin:8px 0 0}
 @media(min-width:900px){
  #printer-detail .printer-dashboard{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
  .printer-materials{grid-column:1/-1}
@@ -5536,7 +5741,7 @@ function roomCardBody(x,v){
  const online=roomOnline(v),busy=['RUNNING','PREPARE','PAUSE'].includes(v.print_state),pct=Number.isFinite(v.print_pct)?Math.max(0,Math.min(100,v.print_pct)):0;
  const units=roomUnits(v),incidents=attentionPending(x.name),issue=incidents[0]?.message||'';
  const cameraNote=v.camera_warning==='resumed'?'Camera warning · print resumed':v.camera_warning==='resuming'?'Camera warning · resuming print':'';
- return {job:`<div><strong>${roomText(!online?'Waiting for this printer':busy?v.print_name||'Current print':'Ready for the next print')}</strong><small>${roomText((online?'':'Last report · ')+(busy?(v.print_state==='PREPARE'?'Preparing':v.print_state==='PAUSE'?'Paused':'Printing')+' · '+pct+'%':'Printer idle'))}</small></div><div class="room-left">${online&&busy?`<b class="room-pct">${pct}%</b>`:''}${roomText(online?(busy&&v.print_left_min!=null?hm(v.print_left_min):'Idle'):'—')}<small>${online&&busy?'remaining':online?'ready when you are':'check connection'}</small>${online&&busy&&v.print_left_min!=null?`<small class="room-eta">free ≈ ${new Date(Date.now()+v.print_left_min*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>`,pct,
+ return {job:`<div><strong>${roomText(!online?'Waiting for this printer':busy?v.print_name||'Current print':'Ready for the next print')}</strong><small>${roomText((online?'':'Last report · ')+(busy?(v.print_state==='PREPARE'?'Preparing':v.print_state==='PAUSE'?'Paused':'Printing'):'Printer idle'))}</small></div><div class="room-left">${busy?`<b class="room-pct"${online?'':' style="opacity:.55"'}>${pct}%</b>`:''}${roomText(online?(busy&&v.print_left_min!=null?hm(v.print_left_min):'Idle'):'—')}<small>${online&&busy?'remaining':online?'ready when you are':'check connection'}</small>${online&&busy&&v.print_left_min!=null?`<small class="room-eta">free ≈ ${new Date(Date.now()+v.print_left_min*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>`,pct,
  body:`<div class="room-statusline"><span class="room-status ${!online?'offline':issue?'issue':''}">${issue?`<button class="room-link" data-room-alert="${roomText(x.name)}" title="${roomText(issue)}">Needs attention →</button>`:roomText(cameraNote||roomStatus(v,x.name))}</span><button class="room-link" data-room-open="${roomText(x.name)}">Open printer ↗</button></div>${roomLiveSummary(v)}${roomFilamentRoute(units,online,v,x.name)}`,issue};
 }
 function renderRoom(){
@@ -5993,21 +6198,26 @@ function renderTabs(){
 }
 async function peopleCall(action,body){const r=await fetch('/api/people/'+action,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});checkLogin(r);return r.json();}
 async function peopleRemove(name){if(!confirm('Remove '+name+'? They are signed out right away.'))return;const r=await peopleCall('remove',{name});if(r.error)alert(r.error);$('#dlg').close();peopleDlg();}
+async function peopleUninvite(name){const r=await peopleCall('uninvite',{name});if(r.error)alert(r.error);$('#dlg').close();peopleDlg();}
 function signOut(){fetch('/logout',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(()=>{}).finally(()=>location.replace('/login'));}
 document.addEventListener('DOMContentLoaded',()=>{peopleCall('list').then(d=>{if(d&&d.me&&d.me!=='local')$('#menu-me').textContent=' · '+d.me;}).catch(()=>{});});
 async function peopleDlg(){
  const d=await peopleCall('list');if(d.error){alert(d.error);return;}
  const li='display:flex;justify-content:space-between;gap:8px;align-items:center;padding:7px 0;border-bottom:1px solid var(--line)';
- const rows=[`<li style="${li}"><span><b>${pcEscape(d.owner)}</b> <small class="meta">owner · owner password</small>${d.me===d.owner?' <small class="meta">(you)</small>':''}</span></li>`].concat(d.people.map(p=>`<li style="${li}"><span><b>${pcEscape(p.name)}</b>${p.admin?' <small class="meta">admin</small>':''}${p.name===d.me?' <small class="meta">(you)</small>':''}</span>${d.admin&&p.name!==d.me?`<button type="button" onclick="peopleRemove(${jsArg(p.name)})">Remove</button>`:''}</li>`)).join('');
+ const rows=[`<li style="${li}"><span><b>${pcEscape(d.owner)}</b> <small class="meta">owner · owner password</small>${d.me===d.owner?' <small class="meta">(you)</small>':''}</span></li>`].concat(d.people.map(p=>`<li style="${li}"><span><b>${pcEscape(p.name)}</b>${p.admin?' <small class="meta">admin</small>':''}${p.name===d.me?' <small class="meta">(you)</small>':''}</span>${d.admin&&p.name!==d.me?`<button type="button" onclick="peopleRemove(${jsArg(p.name)})">Remove</button>`:''}</li>`)).concat((d.invites||[]).map(i=>`<li style="${li}"><span><b>${pcEscape(i.name)}</b> <small class="meta">invited · link not used yet</small></span><button type="button" onclick="peopleUninvite(${jsArg(i.name)})">Cancel</button></li>`)).join('');
  const audit=(d.audit||[]).map(a=>`<li class="meta" style="font-size:12px;padding:3px 0">${pcEscape(String(a.time||'').slice(5,16))} · <b>${pcEscape(a.who)}</b> · ${pcEscape(a.what)}</li>`).join('');
- openDialog(`<h3 style="margin:0 0 4px">People &amp; sign-in</h3><p class="meta">Signed in as <b>${pcEscape(d.me==='local'?'this device':d.me)}</b>. Each person signs in with their own name and password; removing someone signs them out at once.</p>
+ openDialog(`<h3 style="margin:0 0 4px">People &amp; sign-in</h3><p class="meta">Signed in as <b>${pcEscape(d.me==='local'?'this device':d.me==='~tailscale'?'a Tailscale device (no sign-in)':d.me)}</b>. Each person signs in with their own name and password; removing someone signs them out at once.</p>
   <ul style="list-style:none;padding:0;margin:8px 0 14px">${rows}</ul>
-  ${d.admin?`<h4 style="margin:12px 0 4px">Add a person</h4><label>Name</label><input name="name" maxlength="32" autocomplete="off"><label>Password (at least 8 characters)</label><input name="password" type="password" autocomplete="new-password"><label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="admin" style="width:auto">Can add and remove people</label>`:''}
+  ${d.admin?`<label style="display:flex;gap:8px;align-items:flex-start;margin:4px 0 10px"><input type="checkbox" name="tailscale" style="width:auto;margin-top:3px"${d.tailscale?' checked':''}><span><b>Open to everyone on Tailscale</b><br><small class="meta">Anyone you share this phone with in Tailscale just opens the address, no name or password. They can run and stop prints but not add, edit or remove printers or people. To cut someone off, remove their device in Tailscale. Office Wi-Fi visitors still sign in.</small></span></label>`:''}
+  ${d.admin?`<h4 style="margin:12px 0 4px">Invite with a link</h4><p class="meta" style="margin:0 0 6px">Fastest: type their name, save, and send them the link. They choose their own password. One use, valid 7 days.</p><label>Name</label><input name="invite" maxlength="32" autocomplete="off">`:''}
+  ${d.admin?`<h4 style="margin:12px 0 4px">Or add a person with a password</h4><label>Name</label><input name="name" maxlength="32" autocomplete="off"><label>Password (at least 8 characters)</label><input name="password" type="password" autocomplete="new-password"><label style="display:flex;gap:8px;align-items:center;margin-top:8px"><input type="checkbox" name="admin" style="width:auto">Can add and remove people</label>`:''}
   <h4 style="margin:14px 0 4px">Change your password</h4><label>New password</label><input name="mine" type="password" autocomplete="new-password">
   ${audit?`<h4 style="margin:14px 0 4px">Recent actions</h4><ul style="list-style:none;padding:0;margin:0;max-height:170px;overflow:auto">${audit}</ul>`:''}`,
   async fd=>{let r;
+   if(d.admin&&!!fd.get('tailscale')!==!!d.tailscale){r=await peopleCall('tailscale',{on:!!fd.get('tailscale')});if(r.error)return alert(r.error);}
+   if(fd.get('invite')){if(/^(localhost|127\.|\[?::1)/.test(location.hostname))return alert('You opened the dashboard as localhost, so the link would not work on their device. Open it at its Tailscale or office address and create the invite there.');r=await peopleCall('invite',{name:fd.get('invite')});if(r.error)return alert(r.error);const url=location.origin+r.path;try{await navigator.clipboard.writeText(url);}catch(e){}prompt('Invite link for '+fd.get('invite')+' (copied if your browser allows). Send it to them; it works once, for '+r.days+' days:',url);}
    if(fd.get('name')){r=await peopleCall('add',{name:fd.get('name'),password:fd.get('password'),admin:!!fd.get('admin')});if(r.error)return alert(r.error);}
-   if(fd.get('mine')){if(d.me==='local')return alert('Sign in with a name to change a password.');r=await peopleCall('password',{name:d.me,password:fd.get('mine')});if(r.error)return alert(r.error);alert('Password changed. Use the new one next time you sign in.');}
+   if(fd.get('mine')){if(d.me==='local'||d.me==='~tailscale')return alert('Sign in with a name to change a password.');r=await peopleCall('password',{name:d.me,password:fd.get('mine')});if(r.error)return alert(r.error);alert('Password changed. Use the new one next time you sign in.');}
   });
 }
 function editPrinterDlg(){const x=PRINTERS.find(x=>x.name===P)||{};const c=x.config||{};
@@ -6119,7 +6329,7 @@ function dropCam(){try{const i=document.getElementById('camimg');if(i){cameraBuf
 window.addEventListener('pagehide',dropCam);
 window.addEventListener('beforeunload',dropCam);
 document.addEventListener('click',e=>{if(!e.target.closest('.menu'))document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open'))});
-function unitName(a){const m=/^(AMS|HT)-(\d+)$/.exec(a);if(!m)return a;return m[1]==='HT'?`AMS HT ${+m[2]+1}`:`AMS ${+m[2]+1}`;}
+function unitName(a){const m=/^(AMS|HT)-(\d+)$/.exec(a);if(!m)return a;const n=+m[2],l=n<26?String.fromCharCode(65+n):String(n+1);return m[1]==='HT'?`AMS HT ${l}`:`AMS ${l}`;}
 function hm(mins){const m=Math.max(0,Math.round(mins||0));const h=Math.floor(m/60),r=m%60;
   return h?(r?`${h}h ${r}m`:`${h}h`):`${r}m`;}
 function dryWaitElapsed(since){const seconds=Math.max(0,Math.floor(Date.now()/1000-Number(since||Date.now()/1000)));return `${Math.floor(seconds/60)}:${String(seconds%60).padStart(2,'0')}`;}
@@ -6450,6 +6660,7 @@ function mountControlWidgets(){
  });
  source.replaceChildren();
 }
+function nozzleSize(e,n){const info=e.nozzle_info||{};const key=n?String(n.hnow??n.id):Object.keys(info).length===1?Object.keys(info)[0]:'0';const z=info[key];const d=z?.d??(!n||(e.nozzles||[]).length<=1?e.nozzle_diameter:null);if(!(Number(d)>0))return '';const t=String(z?.type||'');const kind=[t[0]==='H'?'hardened steel':t[0]==='S'?'stainless steel':'',t[1]==='H'?'high flow':t[1]==='S'?'standard flow':''].filter(Boolean).join(', ');return `<b class="nz-size"${kind?` title="${kind}"`:''}>${Number(d).toFixed(1)} mm${t[1]==='H'?' HF':''}</b>`;}
 function renderCtl(){
  const activeTarget=document.activeElement?.id?.startsWith('pc-target-')?document.activeElement:null;
  const activeDraft=activeTarget?{id:activeTarget.id,value:activeTarget.value}:null;
@@ -6457,8 +6668,8 @@ function renderCtl(){
  if(!D||PC_DATA_PRINTER!==P){renderCameraJob();$('#ctl').innerHTML='<div class="printer-controls"><div class="pc-shell pc-loading">Loading printer controls…</div></div>';mountControlWidgets();return;}
  pcObserve();const s=pcState(),e=D.env||{},f=D.fans||{},connected=pcConnected(),pending=s.inflight.has('control'),dis=(!connected||pending)?'disabled':'';
  const readings=[];const nozzles=e.nozzles||[];const active=nozzles.length?nozzles.reduce((a,b)=>((b.active&&!a.active)||(!!b.active===!!a.active&&b.temp>a.temp))?b:a):null;
- if(nozzles.length>1)nozzles.forEach(n=>readings.push({label:'Nozzle '+(Number.isFinite(Number(n.id))?Number(n.id)+1:'—'),value:n.temp,target:n.target,kind:n===active?'nozzle':null,note:n===active?'temperature control':'read only'}));
- else readings.push({label:'Nozzle',value:e.nozzle,target:e.nozzle_target,kind:'nozzle'});
+ if(nozzles.length>1)nozzles.forEach(n=>readings.push({label:'Nozzle '+(Number.isFinite(Number(n.id))?Number(n.id)+1:'—'),size:nozzleSize(e,n),value:n.temp,target:n.target,kind:n===active?'nozzle':null,note:n===active?'temperature control':'read only'}));
+ else readings.push({label:'Nozzle',size:nozzleSize(e,nozzles[0]||null),value:e.nozzle,target:e.nozzle_target,kind:'nozzle'});
  readings.push({label:'Bed',value:e.bed,target:e.bed_target,kind:'bed'},{label:'Chamber',value:e.chamber,target:e.chamber_target,kind:'chamber'});
  const thermal=readings.map((r,i)=>{
   let draft=r.kind?s.tempTargets[r.kind]:null;
@@ -6469,7 +6680,7 @@ function renderCtl(){
   const different=r.target!=null&&Math.round(fieldTarget)!==Math.round(r.target);
  const target=r.target==null?'—':r.target>0?Math.round(r.target)+'°':'Off';
  const warming=Number(r.target)>0&&r.value!=null&&Number(r.value)<Number(r.target)-2;
- return `<div class="pc-thermalcell desk-thermal-row ${warming?'is-warming':''}"><span class="desk-sensor"><i style="background:${DESK_SENSOR_COLORS[i%DESK_SENSOR_COLORS.length]}"></i>${r.label}${r.kind==='nozzle'?'<small>active</small>':''}</span><strong>${pcFormatTemp(r.value)}<small> °C</small></strong><div class="desk-target">${r.kind?`<form onsubmit="event.preventDefault();pcApplyTemp('${r.kind}')"><input id="pc-target-${r.kind}" aria-label="${r.label} target in degrees Celsius" type="number" min="0" max="${{nozzle:320,bed:120,chamber:65}[r.kind]}" step="1" required value="${fieldTarget}" ${dis}><button class="pc-btn" type="submit" aria-label="Apply ${r.label} target" ${dis}>✓</button></form>`:`<span title="Target is read only">${target}</span>`}${different?`<small>Printer reports ${target}</small>`:''}</div></div>`;
+ return `<div class="pc-thermalcell desk-thermal-row ${warming?'is-warming':''}"><span class="desk-sensor"><i style="background:${DESK_SENSOR_COLORS[i%DESK_SENSOR_COLORS.length]}"></i>${r.label}${r.size||''}${r.kind==='nozzle'?'<small>active</small>':''}</span><strong>${pcFormatTemp(r.value)}<small> °C</small></strong><div class="desk-target">${r.kind?`<form onsubmit="event.preventDefault();pcApplyTemp('${r.kind}')"><input id="pc-target-${r.kind}" aria-label="${r.label} target in degrees Celsius" type="number" min="0" max="${{nozzle:320,bed:120,chamber:65}[r.kind]}" step="1" required value="${fieldTarget}" ${dis}><button class="pc-btn" type="submit" aria-label="Apply ${r.label} target" ${dis}>✓</button></form>`:`<span title="Target is read only">${target}</span>`}${different?`<small>Printer reports ${target}</small>`:''}</div></div>`;
  }).join('');
  renderCameraJob();
  $('#ctl').innerHTML=`<div class="printer-controls"><section class="desk-panel ${connected&&readings.some(r=>Number(r.target)>0)?'heaters-on':''}"><div class="desk-panel-heading"><h2>Temperatures</h2><button class="pc-btn" type="button" title="Turn off nozzle, bed and chamber heaters; leave fans and AMS dryers running" aria-label="Cooldown: turn off printer heaters" ${!connected||pending||pcBusy()?'disabled':''} onclick="pcCooldown()">Cooldown</button></div>${deskThermalChart(readings)}<div class="desk-thermal-head"><span>Sensor</span><span>Current</span><span>Target</span></div><div class="desk-thermals">${thermal}</div></section><section class="desk-panel"><div class="desk-panel-heading"><h2>Quick actions</h2><button class="pc-quiet" onclick="pcOpen('prepare')">Edit presets${pcIcon('arrow')}</button></div>${pcPreheatButtons()}${s.panel==='prepare'?pcEditor():''}</section><section class="desk-panel desk-speed-only" aria-label="Print speed"><div class="pc-speed" role="group" aria-label="Print speed">${[[1,'Silent'],[2,'Standard'],[3,'Sport'],[4,'Ludicrous']].map(([v,n])=>`<button ${dis} aria-pressed="${Number(D.spd_lvl)===v}" onclick="pcSpeed(${v})">${n}</button>`).join('')}</div></section></div>`;
@@ -6755,7 +6966,7 @@ const attentionPending=(printer=null)=>ATTENTION.incidents.filter(i=>(printer===
 function attentionEscape(s){return pcEscape(s);}
 function attentionIcon(){return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg>';}
 function attentionBadge(){const n=attentionPending(null).length,b=$('#attention-button');if(!b)return;b.className=n?'attention-button unread':'attention-button';b.innerHTML=attentionIcon()+`<span>${n?n+' new alert'+(n===1?'':'s'):'Alerts'}</span>`;b.setAttribute('aria-label',n?n+' unacknowledged alerts':'Open alerts');renderFleetAlerts();}
-function attentionNotify(items){for(const item of items){if(ATTENTION_NOTIFIED.has(item.id))continue;ATTENTION_NOTIFIED.add(item.id);try{if('Notification' in window&&Notification.permission==='granted'){const title=item.printer==='Stock'?(String(item.code||'').startsWith('SPIDER_UNAVAILABLE_')?'Filament unavailable at configured store':'Filament stock is low'):item.printer+' needs attention';const n=new Notification(title,{body:item.message,tag:'ams-'+item.id,requireInteraction:true,silent:!!ATTENTION.native});n.onclick=()=>{window.focus();if(item.printer==='Stock')roomShow('drying');else attentionViewPrinter(item.printer);n.close();};}}catch(e){console.warn('Notification unavailable',e);}}}
+function attentionNotify(items){for(const item of items){if(ATTENTION_NOTIFIED.has(item.id))continue;ATTENTION_NOTIFIED.add(item.id);try{if('Notification' in window&&Notification.permission==='granted'){const title=String(item.code||'').startsWith('OFFLINE')?(item.printer==='All printers'?'Printers offline':item.printer+' is offline'):item.printer==='Stock'?(String(item.code||'').startsWith('SPIDER_UNAVAILABLE_')?'Filament unavailable at configured store':'Filament stock is low'):item.printer+' needs attention';const n=new Notification(title,{body:item.message,tag:'ams-'+item.id,requireInteraction:true,silent:!!ATTENTION.native});n.onclick=()=>{window.focus();if(item.printer==='Stock')roomShow('drying');else attentionViewPrinter(item.printer);n.close();};}}catch(e){console.warn('Notification unavailable',e);}}}
 function renderFleetAlerts(){
  const panel=$('#room-alert-dropdown');if(!panel||panel.hidden)return;
  const items=attentionPending(null).slice().sort((a,b)=>(a.severity==='warning')-(b.severity==='warning')||a.printer.localeCompare(b.printer));
@@ -6763,7 +6974,7 @@ function renderFleetAlerts(){
 }
 function openFleetAlerts(){const panel=$('#room-alert-dropdown'),button=$('#attention-button');panel.hidden=!panel.hidden;button.setAttribute('aria-expanded',String(!panel.hidden));renderFleetAlerts();}
 function closeFleetAlerts(){const panel=$('#room-alert-dropdown');if(panel)panel.hidden=true;$('#attention-button')?.setAttribute('aria-expanded','false');}
-function openFleetAlert(id){const item=ATTENTION.incidents.find(i=>i.id===id);if(!item)return;closeFleetAlerts();if(item.printer==='Stock'){roomShow('drying');requestAnimationFrame(()=>$('#stock-alert')?.scrollIntoView({behavior:'smooth',block:'center'}));return;}selectPrinter(item.printer,true);openAttention('active',true);}
+function openFleetAlert(id){const item=ATTENTION.incidents.find(i=>i.id===id);if(!item)return;closeFleetAlerts();if(item.printer==='All printers'){roomShow('watch');return;}if(item.printer==='Stock'){roomShow('drying');requestAnimationFrame(()=>$('#stock-alert')?.scrollIntoView({behavior:'smooth',block:'center'}));return;}selectPrinter(item.printer,true);openAttention('active',true);}
 async function dismissFleetAlert(id){try{const item=ATTENTION.incidents.find(i=>i.id===id);await attentionSend({action:'acknowledge',ids:[id]});if(item?.printer&&item.printer!=='Stock'&&!attentionPending(item.printer).length)dismissPrinterAlerts(item.printer);renderFleetAlerts();renderAttention();}catch(e){const panel=$('#room-alert-dropdown');if(panel)panel.insertAdjacentHTML('beforeend',`<p class="attention-error">${attentionEscape(e.message)}</p>`);}}
 document.addEventListener('click',e=>{const open=e.target.closest('[data-open-alert-id]'),dismiss=e.target.closest('[data-dismiss-alert-id]');if(open){openFleetAlert(open.dataset.openAlertId);return;}if(dismiss){dismissFleetAlert(dismiss.dataset.dismissAlertId);return;}if(!e.target.closest('.room-alert-wrap'))closeFleetAlerts();});
 function attentionItems(){
@@ -7016,7 +7227,7 @@ def serve(open_browser=False, port=None):
             elif self.path == "/api/control": r = do_control(body)
             elif self.path == "/api/retry_pullback": r = retry_pullback()
             elif self.path == "/api/resolve": r = do_resolve(body.get("action"))
-            elif self.path == "/api/read_rfid": r = do_read_rfid(body["ams_id"], body["slot_id"], pause_drying=True)
+            elif self.path == "/api/read_rfid": r = do_read_rfid(body["ams_id"], body["slot_id"], pause_drying=True, user=True)
             elif self.path == "/api/read_options": r = do_ams_read_options(body.get("on", True))
             elif self.path == "/api/cancel_read":
                 stg = settings(); (stg.get("cool_read") or {}).pop(body.get("slot"), None); save_settings(stg); r = "ok"
@@ -7281,6 +7492,8 @@ def hub(open_browser=False):
     threading.Thread(target=spider_catalog.run, daemon=True).start()
     attention = AttentionCenter(BASE, PORT, stock_inventory)
     threading.Thread(target=attention.run, args=(workers,), daemon=True).start()
+    PORT_HUB[0] = PORT
+    threading.Thread(target=refind_printers, args=(workers, CONFIG, BASE), daemon=True).start()
 
     AUTH = (jload(CONFIG, {}) or {}).get("auth") or {}
     import hmac, secrets, html
@@ -7315,9 +7528,37 @@ def hub(open_browser=False):
         return next((p for p in people() if p["name"].lower() == name), None) if name else None
     def b64(s): return base64.urlsafe_b64encode(s.encode()).decode().rstrip("=")
     def unb64(s): return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4)).decode()
-    def is_admin(who): return who in (OWNER, "local") or bool((person(who) or {}).get("admin"))
+    TAILNET_GUEST = "~tailscale"
+    def is_admin(who): return who != TAILNET_GUEST and (who in (OWNER, "local") or bool((person(who) or {}).get("admin")))
+    TAILNETS = (ipaddress.IPv4Network((0x64400000, 10)), ipaddress.ip_network("fd7a:115c:a1e0::/48"))   # Tailscale CGNAT 100.64/10 (written numerically so the privacy scan does not flag the public range)
+    def from_tailnet(addr):
+        """True for a Tailscale peer address. Only devices someone added or shared on the tailnet have one."""
+        try: ip = ipaddress.ip_address(str(addr).split("%")[0])
+        except ValueError: return False
+        if getattr(ip, "ipv4_mapped", None): ip = ip.ipv4_mapped
+        return any(ip in n for n in TAILNETS)
+    def reserved_name(name): return name.lower() in (OWNER.lower(), "local", "tailscale")
+    def tailnet_guest_ok(handler):
+        """Let a tailnet peer in without signing in, only when the owner turned it on and the connection
+        arrived on this phone's own Tailscale address (recorded when it was switched on)."""
+        if not AUTH.get("trust_tailscale"): return False
+        pinned = str(AUTH.get("tailscale_ip") or "")
+        try: local = handler.connection.getsockname()[0]
+        except OSError: return False
+        if not pinned or local != pinned or not from_tailnet(local) or not from_tailnet(handler.client_address[0]): return False
+        if handler.path.startswith("/api/") and handler.headers.get("Sec-Fetch-Site") in ("cross-site", "same-site"): return False
+        return True
     def save_people(rows):
         c = jload(CONFIG, {}); c.setdefault("auth", {})["people"] = rows; jsave(CONFIG, c); AUTH["people"] = rows
+    INVITE_AGE = 7 * 24 * 60 * 60
+    PEOPLE_LOCK = threading.Lock()
+    def token_hash(token): return hashlib.sha256(token.encode()).hexdigest()
+    def invites(): return [i for i in (AUTH.get("invites") or []) if isinstance(i, dict) and i.get("name") and i.get("hash") and float(i.get("expires") or 0) > time.time()]
+    def save_invites(rows):
+        c = jload(CONFIG, {}); c.setdefault("auth", {})["invites"] = rows; jsave(CONFIG, c); AUTH["invites"] = rows
+    def invite_for(token):
+        h = token_hash(token or "")
+        return next((i for i in invites() if hmac.compare_digest(i["hash"], h)), None) if token else None
     def audit_log(who, path, body):
         if path in ("/api/people/list", "/login"): return
         try: req = json.loads(body or b"{}")
@@ -7333,10 +7574,13 @@ def hub(open_browser=False):
                 with open(AUDIT, "w") as f: f.writelines(tail)
         except OSError: pass
     def people_action(path, req, who):
+        with PEOPLE_LOCK: return _people_action(path, req, who)
+    def _people_action(path, req, who):
         action = path.rsplit("/", 1)[-1]
         if action == "list":
-            out = dict(me=who, admin=is_admin(who), owner=OWNER,
-                       people=[dict(name=p["name"], admin=bool(p.get("admin")), added=p.get("added")) for p in people()])
+            out = dict(me=who, admin=is_admin(who), owner=OWNER, tailscale=bool(AUTH.get("trust_tailscale")),
+                       people=[dict(name=p["name"], admin=bool(p.get("admin")), added=p.get("added")) for p in people()],
+                       invites=[dict(name=i["name"], expires=i["expires"]) for i in invites()] if is_admin(who) else [])
             if out["admin"]:
                 try:
                     with open(AUDIT) as f: out["audit"] = [json.loads(l) for l in f.readlines()[-40:]][::-1]
@@ -7346,15 +7590,38 @@ def hub(open_browser=False):
         if action == "add":
             if not is_admin(who): return dict(error="Only the owner or an admin can add people.")
             if not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}", name): return dict(error="Use a name of up to 32 letters, digits, spaces, dots or dashes.")
-            if person(name) or name.lower() == OWNER.lower(): return dict(error="That name is already used.")
+            if person(name) or reserved_name(name): return dict(error="That name is already used.")
+            if any(i["name"].lower() == name.lower() for i in invites()): return dict(error="That name has a pending invite. Cancel it first.")
             if len(password) < 8: return dict(error="Choose a password of at least 8 characters.")
             save_people(people() + [dict(name=name, hash=pw_hash(password), admin=bool(req.get("admin")), added=iso())])
             return dict(result="ok")
+        if action == "invite":
+            if not is_admin(who): return dict(error="Only the owner or an admin can invite people.")
+            if not _re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9 ._-]{0,31}", name): return dict(error="Use a name of up to 32 letters, digits, spaces, dots or dashes.")
+            if person(name) or reserved_name(name): return dict(error="That name is already used.")
+            token = secrets.token_urlsafe(24)
+            save_invites([i for i in invites() if i["name"].lower() != name.lower()] +
+                         [dict(name=name, hash=token_hash(token), admin=bool(req.get("admin")), expires=time.time() + INVITE_AGE, by=who)])
+            return dict(result="ok", path="/join?t=" + token, days=INVITE_AGE // 86400)
+        if action == "tailscale":
+            if not is_admin(who): return dict(error="Only the owner or an admin can change this.")
+            on = req.get("on") is True
+            c = jload(CONFIG, {}); a = c.setdefault("auth", {})
+            if on:
+                local = str(req.get("_local") or "")
+                if not from_tailnet(local): return dict(error="Open the dashboard at its Tailscale address (100.x.x.x) and switch this on from there.")
+                a["tailscale_ip"] = local; AUTH["tailscale_ip"] = local
+            a["trust_tailscale"] = on; jsave(CONFIG, c); AUTH["trust_tailscale"] = on
+            return dict(result="ok", tailscale=on)
+        if action == "uninvite":
+            if not is_admin(who): return dict(error="Only the owner or an admin can cancel invites.")
+            save_invites([i for i in invites() if i["name"].lower() != name.lower()]); return dict(result="ok")
         if action == "remove":
             if not is_admin(who): return dict(error="Only the owner or an admin can remove people.")
             if not person(name): return dict(error="No one with that name.")
             save_people([p for p in people() if p["name"].lower() != name.lower()]); return dict(result="ok")
         if action == "password":
+            if who == TAILNET_GUEST: return dict(error="Sign in with a name to change a password.")
             if len(password) < 8: return dict(error="Choose a password of at least 8 characters.")
             if name.lower() == OWNER.lower():
                 if who not in (OWNER, "local"): return dict(error="Only the owner can change the owner password.")
@@ -7502,7 +7769,7 @@ def hub(open_browser=False):
             super().send_response(code, message)
             if self.command == "POST": self.send_header("Connection", "close")
 
-        def _login_page(self, error=""):
+        def _login_page(self, error="", form=None, intro=None, code=200):
             username = html.escape(str(AUTH.get("user") or "Print room"), quote=True)
             error_html = '<p class="error" role="alert">' + html.escape(error) + '</p>' if error else ''
             page = """<!doctype html><html lang="en"><head><meta charset="utf-8">
@@ -7516,7 +7783,27 @@ __NAMEFIELD__
 __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
             namefield = ('<label for="username">Name</label><input id="username" name="username" autocomplete="username" placeholder="Leave empty for the owner password" style="margin-bottom:14px">'
                          if people() else f'<input type="hidden" name="username" autocomplete="username" value="{username}">')
-            self._send(200, page.replace("__NAMEFIELD__", namefield).replace("__ERROR__", error_html), "text/html; charset=utf-8")
+            page = page.replace("__NAMEFIELD__", namefield).replace("__ERROR__", error_html)
+            if form is not None:
+                start = page.index('<form method="post" action="/login"'); end = page.index("</form>", start) + len("</form>")
+                page = page[:start] + form.replace("__ERROR__", error_html) + page[end:]
+                page = page.replace("<title>Sign in · Printing Farmlord</title>", "<title>Join · Printing Farmlord</title>")
+            if intro is not None: page = page.replace("<p>Sign in to your printers.</p>", "<p>" + intro + "</p>")
+            self._send(code, page, "text/html; charset=utf-8")
+
+        def _join_page(self, token, error=""):
+            inv = invite_for(token)
+            if not inv:
+                return self._login_page(form='<a href="/login" style="color:#ace4d0">Go to sign in</a>', code=404,
+                                        intro="This invite link has expired or was already used. Ask for a new one.")
+            name = html.escape(inv["name"], quote=True); tok = html.escape(token, quote=True)
+            form = ('<form method="post" action="/join" autocomplete="on">'
+                    f'<input type="hidden" name="t" value="{tok}">'
+                    f'<label for="username">Name</label><input id="username" name="username" autocomplete="username" value="{name}" readonly style="margin-bottom:14px;opacity:.75">'
+                    '<label for="password">Choose a password (at least 8 characters)</label><input id="password" name="password" type="password" autocomplete="new-password" minlength="8" required autofocus style="margin-bottom:14px">'
+                    '<label for="password2">Repeat it</label><input id="password2" name="password2" type="password" autocomplete="new-password" minlength="8" required>'
+                    '__ERROR__<button type="submit">Join and sign in</button></form>')
+            self._login_page(error, form=form, intro=f"Welcome, {name}. Choose your password to join the print room. You will sign in with your name and this password from now on.")
 
         def _authed(self):
             """Private controller calls use loopback; browsers use a signed persistent session."""
@@ -7536,6 +7823,8 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                     self.who = who
                     return True
             except (KeyError, ValueError, TypeError, CookieError, UnicodeDecodeError): pass
+            if tailnet_guest_ok(self):
+                self.who = TAILNET_GUEST; return True
             if self.path.startswith("/api/") or self.command != "GET":
                 self._send(401, json.dumps({"error": "Please sign in.", "login": "/login"}))
             else:
@@ -7578,6 +7867,9 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
             self._t0 = time.time()
             if not host_ok(self.headers.get("Host")): return self._send(421, json.dumps({"error": "Unknown host."}))
             if self.path.split("?", 1)[0] == "/login": return self._login_page()
+            if self.path.split("?", 1)[0] == "/join":
+                import urllib.parse
+                return self._join_page(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("t", [""])[0])
             if not self._authed(): return
             if self.path.startswith("/api/p/") and "/api/cam.jpg" in self.path:
                 import urllib.request, urllib.parse
@@ -7653,6 +7945,42 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 self.send_header("Content-Type", "application/json"); self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", "2"); self.end_headers(); self.wfile.write(b"{}")
                 return
+            if self.path == "/join":
+                import urllib.parse
+                origin = self.headers.get("Origin")
+                if origin and urllib.parse.urlsplit(origin).netloc != self.headers.get("Host"):
+                    return self._send(403, "Join from the invite link.", "text/plain")
+                try: n = int(self.headers.get("Content-Length", "0"))
+                except ValueError: n = -1
+                if n < 0 or n > 4096: return self._send(413, "Request too large", "text/plain")
+                form = urllib.parse.parse_qs(self.rfile.read(n).decode("utf-8", errors="replace"))
+                token = form.get("t", [""])[0]; ip = self.client_address[0]; fails = LOGIN_FAILS.get(ip)
+                if fails and fails[1] > time.time(): return self._login_page("Too many attempts. Wait a minute and try again.", form="", intro="")
+                inv = invite_for(token)
+                if not inv:
+                    fails = LOGIN_FAILS.setdefault(ip, [0, 0.0]); fails[0] += 1
+                    if fails[0] >= 5: fails[0] = 0; fails[1] = time.time() + 60
+                    return self._join_page("")
+                password = form.get("password", [""])[0]
+                if len(password) < 8: return self._join_page(token, "Choose a password of at least 8 characters.")
+                if password != form.get("password2", [""])[0]: return self._join_page(token, "The two passwords don't match.")
+                LOGIN_FAILS.pop(ip, None)
+                someone = dict(name=inv["name"], hash=pw_hash(password), admin=bool(inv.get("admin")), added=iso())
+                with PEOPLE_LOCK:
+                    inv = invite_for(token)
+                    if not inv: return self._join_page("")
+                    if person(inv["name"]) or reserved_name(inv["name"]): return self._join_page(token, "That name is already used. Ask for a new invite.")
+                    save_invites([i for i in invites() if i["hash"] != inv["hash"]])
+                    save_people(people() + [someone])
+                try: append(AUDIT, dict(t=now(), time=iso(), who=someone["name"], what="joined with an invite from " + str(inv.get("by") or OWNER)))
+                except OSError: pass
+                payload = str(int(time.time()) + SESSION_AGE) + "." + secrets.token_hex(16) + "." + b64(someone["name"])
+                token = payload + "." + sign_session(payload, someone["hash"])
+                self.send_response(303)
+                self.send_header("Set-Cookie", f"ams_session={token}; Path=/; Max-Age={SESSION_AGE}; HttpOnly; SameSite=Lax")
+                self.send_header("Location", "/"); self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", "0"); self.end_headers()
+                return
             if self.path == "/login":
                 import urllib.parse
                 origin = self.headers.get("Origin")
@@ -7688,6 +8016,8 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
                 return
             if not self._authed(): return
             if not json_post_ok(self.headers): return self._send(403, json.dumps({"error": "Use the dashboard to make changes."}))
+            if getattr(self, "who", "") == TAILNET_GUEST and self.path in ("/api/add_printer", "/api/edit_printer", "/api/remove_printer", "/api/reorder"):
+                return self._send(403, json.dumps({"error": "Sign in with a name to add, edit or remove printers."}))
             body = read_body(self.headers, self.rfile)
             if body is None: return self._send(413, json.dumps({"error": "Request too large."}))
             n = len(body)
@@ -7695,7 +8025,10 @@ __ERROR__<button type="submit">Sign in</button></form></main></body></html>"""
             if self.path.startswith("/api/people/"):
                 try: req = json.loads(body or b"{}")
                 except ValueError: req = {}
-                return self._send(200, json.dumps(people_action(self.path, req if isinstance(req, dict) else {}, getattr(self, "who", OWNER))))
+                req = dict(req) if isinstance(req, dict) else {}
+                try: req["_local"] = self.connection.getsockname()[0]
+                except OSError: req["_local"] = ""
+                return self._send(200, json.dumps(people_action(self.path, req, getattr(self, "who", OWNER))))
             if self.path == "/api/filament_stock":
                 import urllib.parse
                 origin = self.headers.get('Origin')
