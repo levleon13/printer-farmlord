@@ -43,7 +43,18 @@ MOVEMENT_HTML = MOVEMENT_HTML.replace("__AMS_UI_VERSION__", UI_VERSION)
 
 
 SETUP_HTML = web_page("setup.html")
+
+_PAGE_CACHE = {}
+
+
+def dashboard_page(store):
+    """The dashboard as bytes for this store name, built once instead of on every page load."""
+    b = _PAGE_CACHE.get(store)
+    if b is None:
+        if len(_PAGE_CACHE) > 4: _PAGE_CACHE.clear()
+        b = _PAGE_CACHE[store] = HTML.replace("configured store", store or "configured store").encode()
+    return b
 LOGIN_HTML = web_page("login.html")
 
 
-__all__ = ['WEB', 'web_page', 'LOGIN_HTML', 'HTML', 'MOVEMENT_HTML', 'UI_VERSION', 'SETUP_LOGO', 'SETUP_HTML']
+__all__ = ['_PAGE_CACHE', 'dashboard_page', 'WEB', 'web_page', 'LOGIN_HTML', 'HTML', 'MOVEMENT_HTML', 'UI_VERSION', 'SETUP_LOGO', 'SETUP_HTML']

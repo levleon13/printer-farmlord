@@ -173,7 +173,7 @@ def rev_data():
         str(sorted(p // 2 for p in pcts)), STATUS.get("mqtt"),
     ]
     try:
-        parts.append(str(int(os.path.getmtime(SPOOLS)))); parts.append(str(int(os.path.getmtime(SETTINGS))))
+        parts.append(str(int(max(os.path.getmtime(SPOOLS), SPOOLS_SAVED["t"])))); parts.append(str(int(os.path.getmtime(SETTINGS))))
         if os.path.exists(ACTFILE): parts.append(str(os.path.getmtime(ACTFILE)))
         if os.path.exists(COOLDOWN): parts.append(str(os.path.getmtime(COOLDOWN)))
     except Exception: pass
@@ -273,7 +273,7 @@ def report_data():
     known = [dict(id=s["id"], name=s["name"], type=s["type"]) for s in spools.values() if s.get("name")]
     movable = [dict(id=s["id"], name=s.get("name") or s["type"], type=s["type"], where=("removed" if s.get("removed_at") else s.get("slot")),
                     pct=assess(s)["pct"]) for s in spools.values() if s.get("name") or s.get("manual") or s.get("removed_at")]
-    try: ev = [json.loads(l) for l in open(EVENTS).read().splitlines()[-40:]][::-1]
+    try: ev = [json.loads(l) for l in tail_lines(EVENTS, 40)][::-1]
     except FileNotFoundError: ev = []
     return dict(unrestricted_jog=bool(jload(CONFIG, {}).get("allow_unrestricted_jog")), current_action=current_printer_action(state), estimated_power=estimated_power(state), nozzle_source=nozzle_source, generated=iso(), last_update=iso(state.get("t")) if state.get("t") else None,
                 print_state=state.get("print_state"), print_left_min=state.get("print_left_min"),

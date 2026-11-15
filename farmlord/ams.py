@@ -28,7 +28,7 @@ def parse_ams(report):
     ams = pr.get("ams")
     if not isinstance(ams, dict) or "ams" not in ams: return None, None
     out = {}
-    try: jsave(P("last_ams_raw.json"), ams)
+    try: jsave_changed(P("last_ams_raw.json"), ams)
     except Exception: pass
     try: exist = int(str(ams.get("tray_exist_bits")), 16)
     except Exception: exist = None

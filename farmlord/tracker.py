@@ -113,7 +113,11 @@ class Tracker:
             self._mtimes = m
 
     def _save(self):
-        jsave(STATE, self.state); jsave(SPOOLS, self.spools)
+        jsave(STATE, self.state); jsave_changed(SPOOLS, self.spools)   # spools rarely change per report
+        # The dashboard revision used spools.json's mtime, which moved on every save; keep that tick
+        # (state.json is written in the same save, so its mtime is the time the old one would have had).
+        try: SPOOLS_SAVED["t"] = os.path.getmtime(STATE)
+        except OSError: pass
         try: self._mtimes = (os.path.getmtime(SPOOLS), os.path.getmtime(STATE))
         except FileNotFoundError: pass
 

@@ -176,8 +176,14 @@ def in_process(target, dump=None, repeat=60):
     out["mqtt message (unchanged AMS)"] = measure(lambda: t.update(*a.parse_ams(rep)), counts, repeat)
     out["dashboard poll  rev_data()"] = measure(a.rev_data, counts, repeat)
     out["state API  report_data()"] = measure(a.report_data, counts, max(5, repeat // 6))
-    page = lambda: a.gzip_body(a.HTML.replace("configured store", a.store_name() or "configured store").encode())
-    out["page build  GET / body"] = measure(page, counts, max(10, repeat // 3))
+    # Everything GET / does with the page: build the body, its ETag, and the gzip copy.
+    import hashlib
+    if a.has("dashboard_page"):
+        page = lambda: (lambda b: (a.etag_for(b), a.gzip_body(b)))(a.dashboard_page(a.store_name()))
+    else:
+        page = lambda: (lambda b: ('"' + hashlib.sha1(b).hexdigest()[:24] + '"', a.gzip_body(b)))(
+            a.HTML.replace("configured store", a.store_name() or "configured store").encode())
+    out["page build  GET / body+ETag+gzip"] = measure(page, counts, max(10, repeat // 3))
     sent_before = len(rec.sent)
     for tick in ("autodry_tick", "dry_pending_tick", "rfid_heat_cycle_tick", "rfid_retry_tick", "cool_read_tick",
                  "ams_wedged_tick", "pullback_retry_tick", "fan_timer_tick", "camera_resume_tick",
@@ -259,11 +265,19 @@ def end_to_end(target, repeat=150):
         try: hub.wait(10)
         except subprocess.TimeoutExpired: hub.kill()
         subprocess.run(["pkill", "-f", f"{target}/ams_tracker.py serve"], capture_output=True)
-        log = root / "net.log"
-        out["network calls from request/tick code"] = len(log.read_text().splitlines()) if log.exists() else 0
+        out.update(network_counts(root / "net.log"))
         return out
     finally:
         shutil.rmtree(root, ignore_errors=True)
+
+
+BACKGROUND = ("_errdb_download",)      # refresh threads that are allowed to use the network
+
+
+def network_counts(log):
+    rows = [l.split("\t", 1)[-1] for l in log.read_text().splitlines()] if log.exists() else []
+    bg = sum(any(b in r for b in BACKGROUND) for r in rows)
+    return {"network calls inside requests/ticks": len(rows) - bg, "network calls in background refresh": bg}
 
 
 # ---------------------------------------------------------------------------- driver
@@ -295,9 +309,8 @@ def child(target, mode, dump=None):
         if r.returncode:
             raise SystemExit(f"{mode} run failed for {target}:\n{r.stderr[-4000:]}")
         res = json.loads(r.stdout.strip().splitlines()[-1])
-        log = work / "net.log"
         if mode == "inproc":
-            res["network calls from request/tick code"] = len(log.read_text().splitlines()) if log.exists() else 0
+            res.update(network_counts(work / "net.log"))
         return res
     finally:
         shutil.rmtree(holder, ignore_errors=True)

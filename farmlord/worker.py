@@ -55,7 +55,7 @@ def serve(open_browser=False, port=None):
     rotate_snapshots()   # before the MQTT thread starts writing
     threading.Thread(target=mqtt_loop, daemon=True).start()
     threading.Thread(target=temp_history_loop, daemon=True).start()
-    threading.Thread(target=lambda: (time.sleep(3), errdb()), daemon=True).start()
+    threading.Thread(target=lambda: (time.sleep(3), errdb_refresh_now()), daemon=True).start()
     def auto_thread():
         time.sleep(30)
         while True:

@@ -104,7 +104,7 @@ def main():
     elif a.cmd == "same": print(do_same(a.new_id, a.old_id))
     elif a.cmd == "dried": print(do_dried(a.spool_id, a.hours, a.temp))
     elif a.cmd == "events":
-        try: lines = open(EVENTS).read().splitlines()[-a.n:]
+        try: lines = tail_lines(EVENTS, a.n)
         except FileNotFoundError: lines = []
         for l in lines:
             e = json.loads(l); print(f"{e['time']}  {e['kind']:12s} {e.get('slot') or '':7s} {e.get('msg','')}")

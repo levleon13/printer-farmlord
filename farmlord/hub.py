@@ -967,7 +967,7 @@ def hub(open_browser=False):
             b = body.encode() if isinstance(body, str) else body
             tag = None
             if etag and code == 200:
-                tag = '"' + hashlib.sha1(b).hexdigest()[:24] + '"'
+                tag = etag_for(b)
                 if tag in (self.headers.get("If-None-Match") or ""):
                     self.send_response(304); self.send_header("ETag", tag); self.send_header("Cache-Control", "no-cache")
                     self.send_header("X-AMS-UI-Version", UI_VERSION); self.send_header("Content-Length", "0"); self.end_headers()
@@ -1028,7 +1028,7 @@ def hub(open_browser=False):
                         up.close()
                 except Exception: pass
                 return
-            if self.path == "/": self._send(200, HTML.replace("configured store", store_name() or "configured store"), "text/html; charset=utf-8", etag=True)
+            if self.path == "/": self._send(200, dashboard_page(store_name()), "text/html; charset=utf-8", etag=True)
             elif self.path.split("?", 1)[0] == "/movement": self._send(200, MOVEMENT_HTML, "text/html; charset=utf-8", etag=True)
             elif self.path == "/api/attention": self._send(200, json.dumps(attention.snapshot()))
             elif self.path == "/api/filament_stock": self._send(200, json.dumps(stock_inventory.snapshot()))

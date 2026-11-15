@@ -31,8 +31,8 @@ def _note(address):
             # The host name only (a benchmark has no real printer addresses), for --show-blocked.
             host = address[0] if isinstance(address, tuple) else address
             import traceback
-            caller = next((f"{x.name}" for x in reversed(traceback.extract_stack()[:-3])
-                           if "ams_tracker" in x.filename or "farmlord" in x.filename), "?")
+            caller = ">".join(x.name for x in traceback.extract_stack()[:-3]
+                              if "ams_tracker" in x.filename or "farmlord" in x.filename) or "?"
             f.write(f"{host}\t{caller}\n")
 
 

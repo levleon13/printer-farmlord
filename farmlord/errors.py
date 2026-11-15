@@ -1,5 +1,7 @@
 """Printer and drying error codes: the HMS/print-error database and human-readable reasons."""
 
+import threading
+
 from farmlord.core import *  # noqa: F401,F403
 from farmlord.materials import *  # noqa: F401,F403
 from farmlord.ams import *  # noqa: F401,F403
@@ -73,11 +75,44 @@ ERRDB_URLS = {
 
 ERRDB = {"loaded": 0, "print": {}, "hms": {}}
 
+_ERRDB_REFRESH = threading.Lock()
+
+
 def errdb():
+    """The error-code texts. Never waits on the network: a stale or missing cache is refreshed in
+    the background and the texts known so far are returned (dashboard requests call this)."""
     if ERRDB["loaded"] and now() - ERRDB["loaded"] < 3600: return ERRDB
     cached = jload(ERRDB_FILE, None)
     if cached and now() - cached.get("fetched", 0) < 30 * 86400:
         ERRDB.update({k: cached.get(k, {}) for k in ("print", "hms")}, loaded=now()); return ERRDB
+    if cached and not ERRDB["loaded"]:
+        ERRDB.update({k: cached.get(k, {}) for k in ("print", "hms")})
+    if _ERRDB_REFRESH.acquire(blocking=False):
+        ERRDB["loaded"] = now()          # at most one refresh an hour, as before
+        try:
+            threading.Thread(target=_errdb_fetch, args=(cached,), daemon=True).start()
+        except RuntimeError:              # no thread available: try again on a later call
+            ERRDB["loaded"] = 0; _ERRDB_REFRESH.release()
+    return ERRDB
+
+
+def errdb_refresh_now():
+    """Blocking refresh for the worker's start-up thread."""
+    with _ERRDB_REFRESH:
+        cached = jload(ERRDB_FILE, None)
+        if cached and now() - cached.get("fetched", 0) < 30 * 86400:
+            ERRDB.update({k: cached.get(k, {}) for k in ("print", "hms")}, loaded=now()); return ERRDB
+        return _errdb_fetch(cached, locked=True)
+
+
+def _errdb_fetch(cached, locked=False):
+    try:
+        return _errdb_download(cached)
+    finally:
+        if not locked: _ERRDB_REFRESH.release()
+
+
+def _errdb_download(cached):
     import urllib.request, ssl, re as _re
     ctxs = [None]
     try:
@@ -172,7 +207,7 @@ PRINTER_STAGES = {
 }
 
 
-__all__ = ['dry_stop_reason_text', 'dry_stop_firmware_reason', 'DRY_WAIT_REASONS', 'DRY_REASON_TEXT',
+__all__ = ['_ERRDB_REFRESH', 'errdb_refresh_now', '_errdb_fetch', '_errdb_download', 'dry_stop_reason_text', 'dry_stop_firmware_reason', 'DRY_WAIT_REASONS', 'DRY_REASON_TEXT',
            'unresolved_print_fault', 'printer_error_signature', 'printer_alerts_text', 'dry_refusal_reason',
            'hms_needs_person', 'SEVERITY', 'ERRDB_FILE', 'ERRDB_URLS', 'ERRDB', 'errdb', '_code4', 'dry_err_text',
            'DRY_ERROR_STATE', 'DRY_WAIT_CODES', 'error_data', 'PRINTER_STAGES']

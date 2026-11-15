@@ -44,7 +44,7 @@ def mqtt_loop():
         except Exception: return
         pr = rep.get("print", {}) if isinstance(rep, dict) else {}
         if isinstance(rep, dict) and len(pr) > 40:   # a full report: keep the latest for diagnostics
-            try: jsave(P("last_report_raw.json"), rep)
+            try: jsave_changed(P("last_report_raw.json"), rep)
             except Exception: pass
         if "stg_cur" in pr:
             with LOCK:
