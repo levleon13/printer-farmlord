@@ -1,0 +1,51 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="color-scheme" content="dark"><title>Set up · Printing Farmlord</title>
+<style>*{box-sizing:border-box}body{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px 16px;background:#0e1618;color:#edf3f2;font:16px -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{width:100%;max-width:560px;padding:28px;background:#1b2528;border:1px solid #344448;border-radius:16px}
+h1{display:flex;align-items:center;gap:10px;font-size:25px;margin:0 0 6px}h2{font-size:18px;margin:26px 0 6px}.fl-mark{display:flex;flex-direction:column;line-height:1;gap:5px}.fl-name{font-weight:800;letter-spacing:.06em;font-size:.82em;color:var(--fg,#eef1f5);white-space:nowrap}.fl-name em{font-style:normal;background:linear-gradient(100deg,#ffe08a 0%,#f5c542 40%,#e9932a 75%,#e23b3b 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px #f5c54226}.fl-by{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:#a1aab8}.fl-by::before{content:"";width:16px;height:1px;background:linear-gradient(90deg,#e23b3b,#f5c542)}
+p,.hint{color:#adbec0;font-size:14px;line-height:1.5;margin:0 0 14px}.step{color:#8fd3b5;font-size:13px;text-transform:uppercase;letter-spacing:.08em;margin-top:18px}
+label{display:block;font-size:14px;margin:12px 0 6px}input{display:block;width:100%;font:inherit;padding:11px 12px;color:#edf3f2;background:#0e1618;border:1px solid #53666b;border-radius:10px}
+input:focus{outline:2px solid #8fd3b5;outline-offset:1px}.row{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}@media(max-width:480px){.row{grid-template-columns:1fr}}
+button{font:inherit;font-weight:600;padding:11px 16px;border-radius:10px;border:1px solid #53666b;background:#24343a;color:#edf3f2;cursor:pointer}button.primary{background:#bfe8d4;color:#0e1618;border-color:#bfe8d4}
+button:disabled{opacity:.5;cursor:default}.actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:16px}
+ul{list-style:none;padding:0;margin:10px 0}li{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 12px;border:1px solid #344448;border-radius:10px;margin-bottom:8px;background:#162024}
+li small{color:#adbec0}li button{padding:6px 10px;font-weight:400}.ok{color:#8fd3b5}.bad{color:#ff9b8f}.msg{min-height:22px;font-size:14px;margin-top:10px}
+.check{display:flex;gap:10px;align-items:flex-start;margin:12px 0}.check input{width:auto;margin-top:3px}</style></head>
+<body><main>
+<h1>__LOGO__<span class="fl-mark"><b class="fl-name">PRINTING <em>FARMLORD</em></b><small class="fl-by">by Lev Leon</small></span></h1>
+<p>Let's connect your printers. This takes about two minutes, and everything you enter stays on this computer.</p>
+
+<div class="step">Step 1 of 2</div><h2>Add your printers</h2>
+<p class="hint">On each printer's screen: <b>Settings → Network</b>, turn on <b>LAN Only</b> and <b>Developer Mode</b>. The IP address, serial number and access code are shown there.</p>
+<form id="pf" autocomplete="off">
+ <label for="name">Printer name</label><input id="name" required maxlength="40" placeholder="e.g. H2D-1">
+ <div class="row"><div><label for="ip">IP address</label><input id="ip" required inputmode="decimal" placeholder="e.g. 192.0.2.10"></div>
+ <div><label for="serial">Serial number</label><input id="serial" required maxlength="32"></div></div>
+ <label for="code">Access code</label><input id="code" required maxlength="32" autocomplete="off">
+ <div class="actions"><button type="button" id="test">Test connection</button><button type="submit">Add printer</button></div>
+ <div class="msg" id="pmsg" role="status"></div>
+</form>
+<ul id="list"></ul>
+
+<div class="step">Step 2 of 2</div><h2>Who can open the dashboard?</h2>
+<div class="check"><input type="checkbox" id="lan"><label for="lan" style="margin:0">Let other devices on my network open it (phone, laptop, Tailscale). Requires a password.</label></div>
+<div id="pw" hidden><label for="pw1">Dashboard password (at least 8 characters)</label><input id="pw1" type="password" autocomplete="new-password">
+<label for="pw2">Repeat password</label><input id="pw2" type="password" autocomplete="new-password"></div>
+<div class="actions"><button class="primary" id="save" disabled>Finish and open the dashboard</button></div>
+<div class="msg" id="smsg" role="status"></div>
+<p class="hint" style="margin-top:22px">Stuck? <a id="report" href="__REPORT__" target="_blank" rel="noopener" style="color:#8fd3b5">Report a problem</a>. It opens a GitHub issue for you to check and send; IP addresses, serial numbers and access codes are never included.</p>
+</main>
+<script>
+const $=id=>document.getElementById(id),printers=[];
+function post(url,body){return fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}).then(r=>r.json())}
+function current(){return{name:$('name').value.trim(),ip:$('ip').value.trim(),serial:$('serial').value.trim(),access_code:$('code').value.trim()}}
+function say(id,text,cls,report){const m=$(id);m.textContent=text;m.className='msg '+(cls||'');if(report){const a=document.createElement('a');a.href=report;a.target='_blank';a.rel='noopener';a.style.color='#8fd3b5';a.textContent=' Report this problem';m.append(a)}}
+function render(){const ul=$('list');ul.replaceChildren();printers.forEach((p,i)=>{const li=document.createElement('li'),t=document.createElement('div'),b=document.createElement('strong'),s=document.createElement('small'),x=document.createElement('button');b.textContent=p.name;s.textContent=' '+p.ip;t.append(b,s);x.type='button';x.textContent='Remove';x.onclick=()=>{printers.splice(i,1);render()};li.append(t,x);ul.append(li)});$('save').disabled=!printers.length}
+$('test').onclick=async()=>{const p=current();if(!p.ip)return say('pmsg','Enter the IP address first.','bad');say('pmsg','Checking '+p.ip+'…');const r=await post('/api/setup/test',{ip:p.ip});say('pmsg',r.message,r.reachable?'ok':'bad')};
+$('pf').onsubmit=async e=>{e.preventDefault();const p=current();const r=await post('/api/setup/check',{printer:p,existing:printers.map(x=>x.name)});if(!r.ok)return say('pmsg',r.message,'bad');printers.push(p);render();$('pf').reset();say('pmsg','Added '+p.name+'. Add another, or go to step 2.','ok');$('name').focus()};
+$('lan').onchange=()=>{$('pw').hidden=!$('lan').checked};
+$('save').onclick=async()=>{const lan=$('lan').checked,pw=$('pw1').value;if(lan&&pw.length<8)return say('smsg','Choose a password of at least 8 characters.','bad');if(lan&&pw!==$('pw2').value)return say('smsg','The two passwords are different.','bad');
+ $('save').disabled=true;say('smsg','Saving…');const r=await post('/api/setup/save',{printers,lan_access:lan,password:lan?pw:''});if(!r.ok){$('save').disabled=false;return say('smsg',r.message,'bad',r.report)}
+ say('smsg','Saved. Starting your dashboard…','ok');const wait=async()=>{try{const s=await fetch('/api/setup/state',{cache:'no-store'});if(s.status===200&&(await s.json()).setup)throw 0;location.href='/'}catch(e){setTimeout(wait,1500)}};setTimeout(wait,2500)};
+</script></body></html>

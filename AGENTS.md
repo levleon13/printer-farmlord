@@ -2,16 +2,19 @@
 
 This repo is the portable print-room system. Start with `README.md`, then run
 `python3 scripts/privacy_check.py` and `python3 -m py_compile ams_tracker.py
-fix_bridge_anchor.py scripts/*.py`. Never copy `.runtime/`, logs, screenshots,
+fix_bridge_anchor.py scripts/*.py farmlord/*.py tests/*.py`. Never copy `.runtime/`, logs, screenshots,
 RFID tags, printer serials, LAN access codes, personal paths or machine-specific
 SSH files into Git.
 
 To set up: run `./scripts/start.sh`. With no printers configured it serves a
 localhost-only setup wizard (`setup_wizard()`), writes the config, then re-execs
 into the hub. `./scripts/install.sh` is the terminal alternative. The hub reads `.runtime/config.json` through
-`AMS_TRACKER_DIR`, spawns one worker per printer and serves port 8765. The whole
-application is `ams_tracker.py`. Change code here, run the syntax and privacy
-checks, test a local dashboard instance, then deploy to the host. Never test
+`AMS_TRACKER_DIR`, spawns one worker per printer and serves port 8765. `ams_tracker.py`
+is only the entry point; the application is the `farmlord/` package (modules listed in
+README.md, pages in `farmlord/web/`). The hub restarts itself when any of those files
+changes. Change code here, run the syntax and privacy checks, run
+`tests/test_same_behaviour.py` and `tests/bench.py --compare` against the previous copy,
+then deploy with `scripts/deploy.py`. Never test
 commands against a live printer without knowing its state — several of them move
 the toolhead or work the filament cutter.
 

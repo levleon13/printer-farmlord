@@ -154,7 +154,35 @@ PRINT_ROOM_SSH_HOST=your-ssh-alias ./scripts/connect_orca_remote.sh
 
 ## Project layout
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/img/docs-layout-dark.webp">
-  <img src="docs/img/docs-layout-light.webp" alt="ams_tracker.py is the whole application; scripts/ holds start, install, setup and privacy tools; docs/ holds the README pictures." width="100%">
-</picture>
+`ams_tracker.py` is the entry point (`run` starts the hub, `serve` a printer's worker). The code is in
+`farmlord/`, one module per job:
+
+| Module | What it does |
+|---|---|
+| `core.py` | paths, JSON files, event log, settings, shared status |
+| `materials.py` | filament materials and how dry each spool is |
+| `ams.py` | reading AMS units, slots and which nozzle holds which filament |
+| `errors.py` | printer and drying error codes in plain words |
+| `tracker.py` | turns each printer report into spool records and events |
+| `actions.py` | G-code, busy flags and the safety guard for anything that moves |
+| `drying.py` | AMS drying, auto-drying and fleet drying |
+| `rfid.py` | tag reads, including unloading a loaded nozzle first |
+| `controls.py` | manual controls: filament, motion, temperatures, fans |
+| `alerts.py` | automatic recovery from known-harmless stops |
+| `camera.py`, `spools.py` | camera stream; naming and moving spools |
+| `views.py` | the JSON the dashboard polls |
+| `mqtt_client.py` | the printer connection |
+| `worker.py`, `hub.py` | the per-printer process; the hub with login, alerts and setup |
+| `pages.py` + `web/` | the dashboard pages as plain HTML files |
+
+`scripts/` holds start, install, setup and privacy tools; `tests/` holds the benchmark and the
+behaviour check (see below); `docs/` holds the README pictures.
+
+### Checking a change
+
+```
+python3 tests/test_same_behaviour.py OLD_COPY_DIR      # same outputs as an older copy?
+python3 tests/bench.py --compare OLD_COPY_DIR .        # faster or slower, and how many file reads/writes
+```
+
+Both run on made-up data and block every non-local network connection, so no printer is touched.

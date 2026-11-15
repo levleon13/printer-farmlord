@@ -13,4 +13,6 @@ jobs:
       - name: Check for identifying data
         run: python3 scripts/privacy_check.py
       - name: Check Python syntax
-        run: python3 -m py_compile ams_tracker.py fix_bridge_anchor.py scripts/*.py
+        run: python3 -m py_compile ams_tracker.py fix_bridge_anchor.py scripts/*.py farmlord/*.py tests/*.py
+      - name: Check the app imports
+        run: AMS_TRACKER_DIR=$(mktemp -d) python3 -c "import ams_tracker"
