@@ -1,0 +1,4 @@
+#!/bin/sh
+# Refuse a commit that contains personal or office-specific data. Enable once per clone:
+#   git config core.hooksPath scripts/hooks
+exec python3 "$(git rev-parse --show-toplevel)/scripts/privacy_check.py" --staged

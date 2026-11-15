@@ -21,7 +21,13 @@ none should be added: print profiles are tuning specific to one person's nozzles
 filament and calibration, and are useless or harmful on anyone else's machine.
 
 Before publishing, stage an explicit allowlist and run
-`python3 scripts/privacy_check.py --staged`. The repository is public: do not
+`python3 scripts/privacy_check.py --staged`. In every clone, run
+`git config core.hooksPath scripts/hooks` once: the pre-commit hook scans each commit, and the
+pre-push hook scans every pushed commit's added lines and rejects any author/committer email that
+is not a GitHub noreply address. The scan also rejects exact strings from a private denylist kept
+outside the repo (`~/.config/printer-farmlord/privacy-denylist.txt`: serials, access codes, office
+IPs and host names, printer and people names). Never commit real printer captures; tests use
+made-up data only. The repository is public: do not
 embed credentials in commits, examples, issue text or tool output. If the privacy
 check finds something, remove it before pushing and re-run the scan.
 

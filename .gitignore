@@ -26,3 +26,10 @@ last_ams_raw.json
 # Reviewed README art and screenshots (no private data)
 !docs/img/*.webp
 !docs/screenshots/*.webp
+
+# Deploy leftovers and real printer captures never belong in Git
+*.before-*
+*.staged.py
+*.next.py
+tests/fixtures/real/
+bench-results/
