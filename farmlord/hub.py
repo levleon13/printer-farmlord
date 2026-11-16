@@ -982,6 +982,90 @@ def hub(open_browser=False):
             t0 = getattr(self, "_t0", None)
             if t0 and time.time() - t0 > 2:
                 print(f"[{iso()}] SLOW {time.time()-t0:.1f}s {self.command} {self.path}", flush=True)
+        def _camera_mux(self):
+            """Several printers' full-rate camera video over ONE connection (the room wall).
+
+            A browser keeps only ~6 connections per site; eight separate video streams would starve
+            the dashboard's own requests. Frames: type (1 byte), index (1 byte, the position in the
+            request's p= list), length (4 bytes, big-endian), payload. Types:
+              0 keepalive · 1 stream start (JSON name + codec) · 4 MP4 init segment
+              2 fragment · 5 fragment that starts with a keyframe · 3 stream ended (text; "off:..." = for good)
+            Fragments are whole moof+mdat pairs, so a viewer can (re)start any camera at a keyframe and
+            a viewer on a slow link skips to the next keyframe instead of falling further behind."""
+            import urllib.parse, urllib.request, urllib.error, queue, struct
+            query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            names = query.get("p", [])[:16]
+            if not names: return self._send(400, json.dumps({"error": "no printers"}))
+            out, stop, backlog, lock = queue.Queue(), threading.Event(), [0], threading.Lock()
+            LIMIT, MAX_DELAY = 64 * 1024 * 1024, 2.0
+            lagging = [False] * len(names)
+
+            def put(kind, i, payload=b""):
+                if stop.is_set(): return
+                with lock:
+                    backlog[0] += len(payload) + 6
+                    if backlog[0] > LIMIT: stop.set(); return
+                out.put((kind, i, payload, time.time()))
+
+            def upstream(i, name):
+                pause = 2
+                while not stop.is_set():
+                    w = workers.get(name)
+                    if not w: put(3, i, b"off:unknown printer"); return
+                    try:
+                        up = urllib.request.urlopen(f"http://127.0.0.1:{w['port']}/api/cam.mp4", timeout=25)
+                    except urllib.error.HTTPError as e:
+                        body = e.read(200)
+                        if b"unavailable on this printer" in body: put(3, i, b"off:" + body); return
+                        put(3, i, b"not ready"); stop.wait(pause); pause = min(30, pause * 2); continue
+                    except Exception:
+                        put(3, i, b"not reachable"); stop.wait(pause); pause = min(30, pause * 2); continue
+                    try:
+                        put(1, i, json.dumps({"name": name, "codec": up.headers.get("X-Codec", "")}).encode())
+                        pause, buf, init, moof, started = 2, bytearray(), bytearray(), None, False
+                        while not stop.is_set():
+                            chunk = up.read1(65536)
+                            if not chunk: break
+                            buf += chunk; used = 0
+                            for kind, b0, e0 in _boxes(buf):
+                                used = e0; box = bytes(buf[b0:e0])
+                                if not started:
+                                    if kind != b"moof": init += box; continue
+                                    started = True; put(4, i, bytes(init))
+                                if kind == b"moof": moof = box
+                                elif kind == b"mdat" and moof is not None:
+                                    put(5 if fragment_is_key(moof) else 2, i, moof + box); moof = None
+                            if used: del buf[:used]
+                            if len(buf) > 8_000_000: break
+                    except Exception: pass
+                    finally:
+                        try: up.close()
+                        except Exception: pass
+                    put(3, i, b"ended"); stop.wait(1)
+
+            self.close_connection = True
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream"); self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff"); self.send_header("Connection", "close"); self.end_headers()
+            for i, name in enumerate(names):
+                if name in workers: threading.Thread(target=upstream, args=(i, name), daemon=True).start()
+                else: put(3, i, b"off:unknown printer")
+            try:
+                while not stop.is_set():
+                    try: kind, i, payload, queued = out.get(timeout=10)
+                    except queue.Empty: kind, i, payload, queued = 0, 0, b"", time.time()
+                    with lock: backlog[0] -= len(payload) + 6 if kind else 0
+                    if kind in (2, 5):
+                        # A slow link: skip this camera's fragments up to its next keyframe rather than lag.
+                        if time.time() - queued > MAX_DELAY: lagging[i] = True
+                        if lagging[i]:
+                            if kind == 2: continue
+                            lagging[i] = False
+                    self.wfile.write(struct.pack(">BBI", kind, i, len(payload)) + payload); self.wfile.flush()
+            except Exception: pass
+            finally:
+                stop.set()
+
         def _proxy(self, data=None):
             import urllib.parse
             parts = self.path.split("/", 4)      # '', 'api', 'p', name, rest
@@ -1000,6 +1084,7 @@ def hub(open_browser=False):
                 import urllib.parse
                 return self._join_page(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get("t", [""])[0])
             if not self._authed(): return
+            if self.path.split("?", 1)[0] == "/api/cams.mux": return self._camera_mux()
             if self.path.startswith("/api/p/") and "/api/cam.jpg" in self.path:
                 import urllib.request, urllib.parse
                 parts = self.path.split("/", 4); name = urllib.parse.unquote(parts[3]); w = workers.get(name)
@@ -1027,6 +1112,30 @@ def hub(open_browser=False):
                     finally:
                         up.close()
                 except Exception: pass
+                return
+            if "/api/cam.mp4" in self.path:
+                # Full-rate camera video: pass the worker's MP4 stream through as it arrives.
+                import urllib.request, urllib.parse, urllib.error
+                parts = self.path.split("/", 4); name = urllib.parse.unquote(parts[3]); w = workers.get(name)
+                if not w: return self._send(404, "{}")
+                self.close_connection = True
+                try:
+                    up = urllib.request.urlopen(f"http://127.0.0.1:{w['port']}/api/cam.mp4", timeout=25)
+                except urllib.error.HTTPError as e:
+                    return self._send(e.code, e.read() or b"camera video unavailable", "text/plain")
+                except Exception:
+                    return self._send(503, b"camera video unavailable", "text/plain")
+                try:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "video/mp4"); self.send_header("X-Codec", up.headers.get("X-Codec", ""))
+                    self.send_header("Cache-Control", "no-store"); self.send_header("Connection", "close"); self.end_headers()
+                    while True:
+                        b = up.read1(65536)
+                        if not b: break
+                        self.wfile.write(b); self.wfile.flush()
+                except Exception: pass
+                finally:
+                    up.close()
                 return
             if self.path == "/": self._send(200, dashboard_page(store_name()), "text/html; charset=utf-8", etag=True)
             elif self.path.split("?", 1)[0] == "/movement": self._send(200, MOVEMENT_HTML, "text/html; charset=utf-8", etag=True)

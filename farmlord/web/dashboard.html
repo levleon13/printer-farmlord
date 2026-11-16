@@ -52,7 +52,7 @@ dialog label{font-size:12px;color:var(--mute)}
 button.stop{background:#5a1d1d;color:#ffb3ad}button.stop:hover{background:#7a2626}
 .dry-waiting:disabled{opacity:1;cursor:wait}.dry-wait-spinner{display:inline-block;width:13px;height:13px;margin-right:6px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;vertical-align:-2px;animation:dry-wait-spin .8s linear infinite}@keyframes dry-wait-spin{to{transform:rotate(360deg)}}
 .legend{font-size:12px;color:var(--mute);margin:-6px 0 14px}
-#cam :is(img,canvas.camera-surface){width:100%;max-width:1100px;border-radius:12px;border:1px solid #2a2a2c;display:block}
+#cam :is(img,canvas.camera-surface,video.camera-video){width:100%;max-width:1100px;border-radius:12px;border:1px solid #2a2a2c;display:block}
 #cam{margin-bottom:14px}
 #act{margin-bottom:14px}
 #err{margin-bottom:16px}
@@ -248,14 +248,14 @@ nav#tabs:empty{display:none}
 header{max-width:1144px;margin:auto;padding:28px 22px 18px;align-items:flex-start;gap:24px;border:0;flex-wrap:wrap}.brand{min-width:175px}.fl-mark{display:flex;flex-direction:column;line-height:1;gap:5px}.fl-name{font-weight:800;letter-spacing:.06em;font-size:.82em;color:var(--fg,#eef1f5);white-space:nowrap}.fl-name em{font-style:normal;background:linear-gradient(100deg,#ffe08a 0%,#f5c542 40%,#e9932a 75%,#e23b3b 100%);-webkit-background-clip:text;background-clip:text;color:transparent;text-shadow:0 0 18px #f5c54226}.fl-by{display:flex;align-items:center;gap:7px;font-size:10px;font-weight:600;letter-spacing:.28em;text-transform:uppercase;color:#a1aab8}.fl-by::before{content:"";width:16px;height:1px;background:linear-gradient(90deg,#e23b3b,#f5c542)}h1{font-size:25px;letter-spacing:-.7px;font-weight:600}.brand p{margin:3px 0 0;color:var(--mute);font-size:12px}.hdr{gap:8px;flex-wrap:wrap;justify-content:flex-end;flex:1}.conn{padding:5px 0;background:none!important;font-size:11px;font-weight:400;color:var(--mute)!important}.conn i{width:6px;height:6px;box-shadow:none!important}.conn.ok i{background:var(--ok)}#net{margin-right:12px}#upd{order:2;flex-basis:100%;text-align:right;font-size:11px}.hdr>button,.menu>button{padding:8px 12px;font-size:12px}#dryall{background:#eab56717;color:var(--warn);font-weight:500}#stopall{background:#f18f9817;color:var(--bad);font-weight:500}#refresh{background:var(--field);color:var(--fg);font-size:12px}.menu>button{display:flex;align-items:center;gap:6px}.menu svg{width:15px;height:15px}.menu .dd{top:42px;min-width:210px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:5px;box-shadow:0 10px 30px #0006}.dd a{border-radius:6px;padding:10px;font-size:12px}.dd a:hover{background:var(--field)}
 nav#tabs{max-width:1100px;margin:0 auto;padding:0 0 16px;border:0;gap:8px}.tab{padding:12px 15px;border:1px solid var(--line);border-radius:10px;background:var(--card);font-size:13px;font-weight:500;gap:8px;min-width:160px;display:grid;grid-template-columns:6px 1fr;flex:1}.tab small{grid-column:2;font-size:11px;line-height:1.2}.tab .dot{width:6px;height:6px;box-shadow:none!important}.tab.active{background:#62a5ff0c;border-color:#62a5ff80;color:var(--fg)}.tab.add-printer{min-width:120px;flex:0;display:flex;justify-content:center;background:none;font-size:12px!important}.tab[draggable]{cursor:grab}.tab:active{cursor:grabbing}
 main{padding:4px 22px 32px;max-width:1144px}.dashboard-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-bottom:18px}.summary-item{border:1px solid var(--line);border-radius:11px;padding:14px 16px;background:var(--card)}.summary-item span{display:block;color:var(--mute);font-size:11px}.summary-item strong{display:block;margin-top:3px;font-size:24px;font-weight:500;letter-spacing:-.6px}.summary-item strong small{font-size:12px;font-weight:400;letter-spacing:0;color:var(--mute);margin-left:5px}.summary-item.needs strong{color:var(--warn)}.summary-item.ready strong{color:var(--ok)}.section-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin:26px 0 12px}.section-heading h2{font-size:17px;font-weight:600;letter-spacing:-.3px;margin:0}.section-heading p{font-size:11px;color:var(--mute);margin:0}.legend{font-size:11px;line-height:1.6;margin:0 0 14px;color:var(--mute)}
-#cam{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:18px 0}#cam .envbox{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:14px 20px;margin:0;gap:12px}#cam .title{font-size:14px}#cam .temp{font-size:11px}#cam :is(img,canvas.camera-surface){max-height:420px;object-fit:contain;background:#0b0d0f;width:100%;border:0;border-radius:0}#cam .presets{align-items:center;gap:14px}#cam .sw{font-size:11px}#cam .sw b{display:none}.envbox{background:var(--card);border-color:var(--line);padding:18px;border-radius:12px}.envbox .title{font-size:14px}.envbox .temp{font-size:12px}
+#cam{background:var(--card);border:1px solid var(--line);border-radius:16px;overflow:hidden;margin:18px 0}#cam .envbox{background:none;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:14px 20px;margin:0;gap:12px}#cam .title{font-size:14px}#cam .temp{font-size:11px}#cam :is(img,canvas.camera-surface,video.camera-video){max-height:420px;object-fit:contain;background:#0b0d0f;width:100%;border:0;border-radius:0}#cam .presets{align-items:center;gap:14px}#cam .sw{font-size:11px}#cam .sw b{display:none}.envbox{background:var(--card);border-color:var(--line);padding:18px;border-radius:12px}.envbox .title{font-size:14px}.envbox .temp{font-size:12px}
 .ams{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px;margin:0 0 18px}.unit{background:none;border:0;border-radius:0;padding:0 0 16px;margin:0;border-bottom:1px solid var(--line);gap:12px;display:grid;grid-template-columns:minmax(0,1fr) auto}.unit-title{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.unit .title{font-size:16px;font-weight:600}.unit-readings{display:flex;align-items:center;gap:12px;margin-top:7px}.unit-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;flex-wrap:wrap}.pill{font-size:10px;font-weight:500;letter-spacing:0;padding:4px 8px;white-space:normal}.pill.on{background:#eab56717;color:var(--warn)}.pill.off,.pill.empty{background:var(--field);color:var(--mute)}.pill.cool{background:#62a5ff17;color:var(--blue)}.env{font-size:11px;color:var(--mute)}.sw{font-size:11px;margin-left:0;gap:6px}.sw .track{width:31px;height:18px;border-radius:20px;background:var(--field);flex:none}.sw .track::after{width:14px;height:14px;background:var(--mute)}.sw.on .track{background:var(--ok)}.sw.on .track::after{left:15px;background:#14241e}.sw b{font-weight:500;font-size:10px}.unit-actions .sw b{display:none}.ams>.legend{margin:12px 0 0;padding:9px 12px;border-radius:8px;background:#121416;font-size:11px}.grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin-top:16px}.card{background:var(--bg);border:1px solid var(--line);border-radius:11px;border-top:2px solid var(--line);padding:16px;display:flex;flex-direction:column;min-width:0}.card.ok{border-color:var(--line);border-top-color:var(--ok)}.card.warn{border-color:var(--line);border-top-color:var(--warn)}.card.bad{border-color:var(--line);border-top-color:var(--bad)}.card.empty{opacity:1;background:transparent;border-style:dashed}.slot{font-size:10px;margin-bottom:6px;padding-right:0}.name{font-size:15px;font-weight:600;line-height:1.35;margin:0 0 12px;overflow-wrap:anywhere}.loaded{position:static;align-self:flex-start;order:-1;font-size:9px;padding:3px 7px;border-radius:5px;background:#62a5ff1a;color:var(--blue);margin-bottom:7px}.rem{font-size:10px;margin:0 0 10px;gap:8px}.rembar{height:4px;border:0;background:var(--field)}.rembar i{border-radius:4px}.verdict{font-size:11px;font-weight:500;line-height:1.5}.bar{height:3px;background:var(--field);margin:8px 0 10px}.meta{font-size:11px;line-height:1.65}.card .acts{margin-top:auto;padding-top:15px;gap:6px}.card .acts>button{font-size:11px;padding:7px 9px}.card details{width:100%;margin-top:3px}.card summary{font-size:11px;color:var(--mute);cursor:pointer;padding:7px 0;list-style:none;display:flex;align-items:center;justify-content:space-between}.card summary::after{content:'+';font-size:16px}.card details[open] summary::after{content:'−'}.card details .acts{margin-top:2px;padding-top:6px;border-top:1px solid var(--line);display:flex;flex-wrap:wrap;gap:6px}.card details .acts button{font-size:11px;padding:7px 9px}
 #events{font:400 12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;border:1px solid var(--line);border-radius:12px;background:var(--card);padding:0;max-height:330px;white-space:normal}.event-row{display:grid;grid-template-columns:125px 110px minmax(0,1fr);align-items:start;gap:16px;padding:12px 16px;border-bottom:1px solid var(--line)}.event-row:last-child{border:0}.event-row time{font-size:10px;color:var(--mute);font-variant-numeric:tabular-nums}.event-kind{font-size:10px;color:var(--blue);text-transform:lowercase}.event-message{font-size:11px;color:var(--fg);overflow-wrap:anywhere}.events-empty{padding:20px;color:var(--mute)}
 .bigerr,.bigwarn{background:var(--card);border:1px solid var(--bad);border-radius:12px;padding:20px;box-shadow:none}.bigwarn{border-color:var(--warn)}.bigerr .lbl{font-size:10px;letter-spacing:.6px;color:var(--bad)}.bigwarn .lbl{color:var(--warn)}.bigerr .msg{font-size:20px;font-weight:600;margin:6px 0}.bigerr .sub,.bigwarn .sub{font-size:12px;color:var(--mute)}.bigerr .acts button{font-size:12px;padding:9px 12px}.actbox,.actbox.done{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:18px}.actbox .title{font-size:14px;font-weight:500;color:var(--blue)}.stepli{font-size:12px;padding:5px 0}.banner{max-width:1100px;margin:0 auto 12px;padding:12px 16px;border:1px solid #f18f9860;background:#f18f9810;border-radius:10px;color:var(--bad);font-size:12px}
 dialog{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:24px;min-width:0;width:min(480px,calc(100vw - 28px));max-height:calc(100dvh - 40px);overflow-y:auto;box-shadow:0 24px 80px #0008}dialog h3{font-size:18px;font-weight:600;letter-spacing:-.3px}dialog label{font-size:12px;color:var(--mute)}dialog input,dialog select{background:var(--bg);border-color:var(--line);border-radius:8px;padding:10px 12px;font-size:14px;margin:7px 0 16px;min-width:0}dialog input[type=checkbox]{accent-color:var(--blue);width:auto}dialog button{font-size:12px}dialog .dialog-actions{margin-top:20px;padding-top:16px;border-top:1px solid var(--line)}dialog::backdrop{background:#080a0dc9;backdrop-filter:blur(5px)}.fchips{gap:8px}.fchip{background:var(--field);border:1px solid var(--line);font-size:12px;font-weight:500;padding:10px 12px;border-radius:8px}.fchip:hover{background:#62a5ff18;color:var(--blue);border-color:var(--blue)}
 .printer-controls .pc-lights{justify-content:flex-start;flex-wrap:wrap;gap:8px}.printer-controls .pc-light{display:grid;grid-template-columns:20px 1fr;column-gap:7px;row-gap:0;background:var(--pc-field);border:1px solid transparent;padding:9px 10px;min-width:100px;text-align:left;align-items:center;border-radius:8px}.printer-controls .pc-lighticon{grid-row:span 2;width:20px;height:24px;background:none!important;border-radius:0}.printer-controls .pc-lighticon svg{width:20px;height:20px}.printer-controls .pc-light>span:nth-child(2){font-size:11px;color:var(--pc-text)}.printer-controls .pc-lightstate{font-size:10px!important;line-height:1.4}.printer-controls .pc-light[aria-pressed=true]{background:#eab5670c;border-color:#eab56730}.printer-controls .pc-light[aria-pressed=true] .pc-lighticon{color:var(--pc-amber)}
 @media(max-width:1000px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}.unit{grid-template-columns:1fr}.unit-actions{justify-content:flex-start}.hdr{justify-content:flex-start}#upd{text-align:left}nav#tabs{margin:0 22px}.tab{min-width:155px}.printer-controls .pc-light{min-width:90px;padding:8px}}
-@media(max-width:600px){header{padding:20px 16px 14px;gap:14px}.hdr{gap:8px}#net{margin-right:4px}.hdr>button,.menu>button{padding:8px 10px}.hdr .conn{flex:none}#upd{font-size:10px}nav#tabs{margin:0 16px;padding-bottom:14px}.tab{padding:10px 12px;min-width:145px}.tab small{font-size:10px}main{padding:0 12px 24px}.dashboard-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.summary-item{padding:12px}.summary-item strong{font-size:22px}.section-heading{flex-wrap:wrap;margin-top:22px}.section-heading p{font-size:10px}.ams{padding:14px;border-radius:12px}.grid{gap:8px}.card{padding:12px}.name{font-size:14px}.card .acts{flex-wrap:wrap}.unit-actions{gap:10px}.unit-readings{flex-wrap:wrap;gap:8px}#cam .envbox{padding:12px;gap:8px}#cam .presets{width:100%;margin-left:0;justify-content:space-between}#cam :is(img,canvas.camera-surface){max-height:280px}.event-row{grid-template-columns:1fr auto;gap:4px 10px;padding:12px}.event-row .event-message{grid-column:1/-1}.printer-controls .pc-lights{gap:8px}.printer-controls .pc-light{min-width:88px}.banner{margin:0 12px 12px}dialog{padding:20px}.bigerr .msg{font-size:18px}}
+@media(max-width:600px){header{padding:20px 16px 14px;gap:14px}.hdr{gap:8px}#net{margin-right:4px}.hdr>button,.menu>button{padding:8px 10px}.hdr .conn{flex:none}#upd{font-size:10px}nav#tabs{margin:0 16px;padding-bottom:14px}.tab{padding:10px 12px;min-width:145px}.tab small{font-size:10px}main{padding:0 12px 24px}.dashboard-summary{grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}.summary-item{padding:12px}.summary-item strong{font-size:22px}.section-heading{flex-wrap:wrap;margin-top:22px}.section-heading p{font-size:10px}.ams{padding:14px;border-radius:12px}.grid{gap:8px}.card{padding:12px}.name{font-size:14px}.card .acts{flex-wrap:wrap}.unit-actions{gap:10px}.unit-readings{flex-wrap:wrap;gap:8px}#cam .envbox{padding:12px;gap:8px}#cam .presets{width:100%;margin-left:0;justify-content:space-between}#cam :is(img,canvas.camera-surface,video.camera-video){max-height:280px}.event-row{grid-template-columns:1fr auto;gap:4px 10px;padding:12px}.event-row .event-message{grid-column:1/-1}.printer-controls .pc-lights{gap:8px}.printer-controls .pc-light{min-width:88px}.banner{margin:0 12px 12px}dialog{padding:20px}.bigerr .msg{font-size:18px}}
 @media(max-width:380px){.grid{grid-template-columns:1fr}.card .acts>button{flex:1}.unit-actions>button{width:100%}.printer-controls .pc-light{min-width:0;flex:1;padding:8px 7px}.printer-controls .pc-light>span:nth-child(2){font-size:10px}}
 @media(pointer:coarse){body button,.fchip,.card summary,.dd a{min-height:44px}.sw{min-height:44px}dialog input,dialog select{font-size:16px}}
 :root{color-scheme:dark}nav#tabs{scrollbar-width:thin;scrollbar-color:var(--line) transparent}dialog .fchip:focus-visible{outline:2px solid var(--blue);outline-offset:2px}.card .meta{margin-bottom:4px}
@@ -276,7 +276,7 @@ nav#tabs{padding-bottom:8px}main{padding-top:0}#cam{margin-top:0}#attention-pane
 /* Print room: camera-first overview and task-focused printer desk. */
 :root{--bg:#111719;--card:#1a2225;--field:#232d31;--line:#344045;--fg:#f0f4f2;--mute:#a0b0b2;--ok:#aee6cc;--blue:#aee6cc;--warn:#ffcc86;--bad:#ff9b9b}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body *{box-sizing:border-box}body [hidden]{display:none!important}
-header{max-width:1440px;padding:22px 28px;margin:auto;align-items:center;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line)}header h1{font-size:21px;letter-spacing:-.6px}header .subtitle{display:none}.hdr{gap:9px;flex-wrap:wrap}#upd{display:none}#conn{display:none}.hdr #dryall,.hdr #stopall{display:none}#refresh{background:var(--field)}button.primary,.pc-btn.primary{color:#10231b!important;background:var(--ok)!important}button:focus-visible,a:focus-visible{outline:2px solid var(--ok);outline-offset:4px}.room-nav{display:flex;gap:6px}.room-nav button{padding:9px 15px;color:var(--mute);background:transparent;font-size:13px}.room-nav button[aria-pressed=true]{color:var(--fg);background:var(--field)}main#room-main{max-width:1440px;padding:28px;margin:auto}.room-heading{display:flex;justify-content:space-between;align-items:end;gap:18px;margin-bottom:22px}.room-heading h2{font-size:27px;font-weight:600;letter-spacing:-.8px;margin:0 0 7px}.room-heading p{font-size:13px;color:var(--mute);margin:0}.room-heading-actions{display:flex;gap:8px;align-items:center}.room-heading button{padding:10px 14px}.room-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.room-printer{border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden;min-width:0}.room-feed{position:relative;display:block;width:100%;aspect-ratio:1.9;padding:0;background:#080d0e;text-align:left;overflow:hidden;border-radius:0}.room-feed:hover{background:#080d0e}.room-feed :is(img,canvas.camera-surface){position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.room-feed:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,#050a0c66,transparent 40%,#050a0ccc);pointer-events:none}.room-cam-empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;gap:6px;color:var(--mute);font-size:13px;padding:50px 20px}.room-feed img:not([src]){visibility:hidden}.room-feed-top{position:absolute;z-index:1;top:14px;left:16px;right:16px;display:flex;justify-content:space-between;gap:14px;font-size:12px}.room-camera-note{color:#d6dfdc;font-size:11px}.room-job{position:absolute;z-index:1;bottom:17px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:end;gap:20px}.room-job strong{display:block;font-size:17px;font-weight:550;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.room-job>div:first-child{min-width:0}.room-job small{font-size:12px;color:#d0d8d5;display:block;margin-top:5px}.room-left{font-size:21px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}.room-progress{height:3px;background:var(--field)}.room-progress i{display:block;height:100%;background:var(--ok)}.room-cardbody{padding:15px 16px}.room-statusline{display:flex;align-items:center;justify-content:space-between;gap:10px}.room-status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ok)}.room-status.offline{color:var(--mute)}.room-status.issue{color:var(--warn)}.room-status:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}.room-unit{border-top:1px solid var(--line);padding-top:10px;margin-top:12px;display:flex;align-items:center;gap:12px;justify-content:space-between}.room-unit-label{font-size:12px;color:var(--mute)}.room-spools{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.room-spool{width:21px;height:21px;border-radius:50%;background:var(--spool,#596069);border:4px solid #485457;box-shadow:inset 0 0 0 2px #151a1d}.room-link{background:transparent;color:var(--ok);padding:3px 0;font-size:12px;white-space:nowrap}.room-issue{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#392d22;color:var(--warn);padding:11px 16px;font-size:12px}.room-issue span{overflow-wrap:anywhere}.room-issue button{color:var(--warn);flex:none}.room-empty{padding:36px 20px;color:var(--mute);border:1px dashed var(--line);border-radius:12px}.room-foot{color:var(--mute);font-size:12px;display:flex;justify-content:space-between;gap:18px;margin-top:20px}.room-detailbar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}.room-detailbar button{padding:9px 13px}.room-detailbar span{font-size:12px;color:var(--mute)}#printer-detail{max-width:1100px;margin:auto}nav#tabs{margin:0 0 8px;padding:0;max-width:none;gap:8px}.tab{padding:11px 13px;min-width:130px;border-radius:10px}.tab.active{border-color:var(--ok);background:#21332d}#cam{margin:0 0 18px}#cam .envbox{background:var(--card);border-color:var(--line);padding:14px 18px}#cam :is(img,canvas.camera-surface){max-height:420px;border-color:var(--line)}#banner:empty{display:none}#overview{display:flex;flex-wrap:wrap;gap:20px;padding:0 3px 14px;margin:0}.summary-item{background:none;border:0;padding:0;display:flex;align-items:center;gap:8px}.summary-item strong{font-size:17px;display:flex;gap:5px;margin:0}.summary-item>span{font-size:11px}.summary-item small{font-size:11px}.printer-controls{--pc-bg:var(--bg);--pc-panel:var(--card);--pc-field:var(--field);--pc-line:var(--line);--pc-text:var(--fg);--pc-muted:var(--mute);--pc-blue:var(--ok);--pc-green:var(--ok);--pc-amber:var(--warn)}.printer-controls .pc-shell{background:var(--card)}.printer-controls .pc-temperatures{background:var(--bg);margin:0 20px;border:1px solid var(--line);border-radius:10px}.printer-controls .pc-controls{gap:18px}.printer-controls .pc-controls>div{background:var(--bg);border:1px solid var(--line);padding:16px;border-radius:10px}.printer-controls .pc-header{padding:20px}.printer-controls .pc-speed button[aria-pressed=true]{background:var(--ok);color:#10231b}.printer-controls .pc-editor{background:var(--bg)}.printer-controls .pc-editor .pc-btn.primary{color:#10231b}.printer-controls .pc-header .pc-quiet{background:var(--field);border-radius:8px;padding:10px}.ams{background:var(--card)}.card{padding:15px}.card .name .sw2{width:28px;height:28px;border:5px solid #485457;box-shadow:inset 0 0 0 2px #151a1d}.card .verdict{font-size:12px}.card .acts>button{padding:9px 10px}.section-heading h2{font-size:18px}.room-dry-list{display:grid;gap:12px}.room-dry-unit{display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,1.4fr) auto;gap:24px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}.room-dry-unit h3{font-size:15px;margin:0 0 6px}.room-dry-unit p{font-size:12px;color:var(--mute);margin:0}.room-dry-unit .bar{margin:8px 0}.room-dry-unit .room-dry-actions{display:flex;gap:8px}.room-dry-unit button{padding:9px 12px}.room-dry-explainer{color:var(--mute);font-size:13px;line-height:1.5;margin:0 0 22px;max-width:740px}.room-dry-unit.blocked{border-color:#80613d}.room-dry-unit.blocked p.reason{color:var(--warn)}.room-unit-title{display:flex;justify-content:space-between;font-size:12px;gap:12px}.room-dry-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}.room-dry-footer button{padding:10px 14px}.room-dry-footer .stop{background:#392729}.room-settings-name{font-size:11px;color:var(--mute);padding:10px 14px;border-bottom:1px solid var(--line)}.room-backup-note{font-size:12px;color:var(--mute)}
+header{max-width:1440px;padding:22px 28px;margin:auto;align-items:center;gap:20px;flex-wrap:wrap;border-bottom:1px solid var(--line)}header h1{font-size:21px;letter-spacing:-.6px}header .subtitle{display:none}.hdr{gap:9px;flex-wrap:wrap}#upd{display:none}#conn{display:none}.hdr #dryall,.hdr #stopall{display:none}#refresh{background:var(--field)}button.primary,.pc-btn.primary{color:#10231b!important;background:var(--ok)!important}button:focus-visible,a:focus-visible{outline:2px solid var(--ok);outline-offset:4px}.room-nav{display:flex;gap:6px}.room-nav button{padding:9px 15px;color:var(--mute);background:transparent;font-size:13px}.room-nav button[aria-pressed=true]{color:var(--fg);background:var(--field)}main#room-main{max-width:1440px;padding:28px;margin:auto}.room-heading{display:flex;justify-content:space-between;align-items:end;gap:18px;margin-bottom:22px}.room-heading h2{font-size:27px;font-weight:600;letter-spacing:-.8px;margin:0 0 7px}.room-heading p{font-size:13px;color:var(--mute);margin:0}.room-heading-actions{display:flex;gap:8px;align-items:center}.room-heading button{padding:10px 14px}.room-wall{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.room-printer{border:1px solid var(--line);border-radius:14px;background:var(--card);overflow:hidden;min-width:0}.room-feed{position:relative;display:block;width:100%;aspect-ratio:1.9;padding:0;background:#080d0e;text-align:left;overflow:hidden;border-radius:0}.room-feed:hover{background:#080d0e}.room-feed :is(img,canvas.camera-surface,video.camera-video){position:absolute;inset:0;width:100%;height:100%;object-fit:cover}.room-feed:after{content:'';position:absolute;inset:0;background:linear-gradient(180deg,#050a0c66,transparent 40%,#050a0ccc);pointer-events:none}.room-cam-empty{position:absolute;inset:0;display:grid;place-content:center;text-align:center;gap:6px;color:var(--mute);font-size:13px;padding:50px 20px}.room-feed img:not([src]){visibility:hidden}.room-feed-top{position:absolute;z-index:1;top:14px;left:16px;right:16px;display:flex;justify-content:space-between;gap:14px;font-size:12px}.room-camera-note{color:#d6dfdc;font-size:11px}.room-job{position:absolute;z-index:1;bottom:17px;left:16px;right:16px;display:flex;justify-content:space-between;align-items:end;gap:20px}.room-job strong{display:block;font-size:17px;font-weight:550;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.room-job>div:first-child{min-width:0}.room-job small{font-size:12px;color:#d0d8d5;display:block;margin-top:5px}.room-left{font-size:21px;font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}.room-progress{height:3px;background:var(--field)}.room-progress i{display:block;height:100%;background:var(--ok)}.room-cardbody{padding:15px 16px}.room-statusline{display:flex;align-items:center;justify-content:space-between;gap:10px}.room-status{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ok)}.room-status.offline{color:var(--mute)}.room-status.issue{color:var(--warn)}.room-status:before{content:'';width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}.room-unit{border-top:1px solid var(--line);padding-top:10px;margin-top:12px;display:flex;align-items:center;gap:12px;justify-content:space-between}.room-unit-label{font-size:12px;color:var(--mute)}.room-spools{display:flex;gap:5px;flex-wrap:wrap;justify-content:flex-end}.room-spool{width:21px;height:21px;border-radius:50%;background:var(--spool,#596069);border:4px solid #485457;box-shadow:inset 0 0 0 2px #151a1d}.room-link{background:transparent;color:var(--ok);padding:3px 0;font-size:12px;white-space:nowrap}.room-issue{display:flex;align-items:center;justify-content:space-between;gap:12px;background:#392d22;color:var(--warn);padding:11px 16px;font-size:12px}.room-issue span{overflow-wrap:anywhere}.room-issue button{color:var(--warn);flex:none}.room-empty{padding:36px 20px;color:var(--mute);border:1px dashed var(--line);border-radius:12px}.room-foot{color:var(--mute);font-size:12px;display:flex;justify-content:space-between;gap:18px;margin-top:20px}.room-detailbar{display:flex;gap:12px;align-items:center;justify-content:space-between;margin-bottom:16px}.room-detailbar button{padding:9px 13px}.room-detailbar span{font-size:12px;color:var(--mute)}#printer-detail{max-width:1100px;margin:auto}nav#tabs{margin:0 0 8px;padding:0;max-width:none;gap:8px}.tab{padding:11px 13px;min-width:130px;border-radius:10px}.tab.active{border-color:var(--ok);background:#21332d}#cam{margin:0 0 18px}#cam .envbox{background:var(--card);border-color:var(--line);padding:14px 18px}#cam :is(img,canvas.camera-surface,video.camera-video){max-height:420px;border-color:var(--line)}#banner:empty{display:none}#overview{display:flex;flex-wrap:wrap;gap:20px;padding:0 3px 14px;margin:0}.summary-item{background:none;border:0;padding:0;display:flex;align-items:center;gap:8px}.summary-item strong{font-size:17px;display:flex;gap:5px;margin:0}.summary-item>span{font-size:11px}.summary-item small{font-size:11px}.printer-controls{--pc-bg:var(--bg);--pc-panel:var(--card);--pc-field:var(--field);--pc-line:var(--line);--pc-text:var(--fg);--pc-muted:var(--mute);--pc-blue:var(--ok);--pc-green:var(--ok);--pc-amber:var(--warn)}.printer-controls .pc-shell{background:var(--card)}.printer-controls .pc-temperatures{background:var(--bg);margin:0 20px;border:1px solid var(--line);border-radius:10px}.printer-controls .pc-controls{gap:18px}.printer-controls .pc-controls>div{background:var(--bg);border:1px solid var(--line);padding:16px;border-radius:10px}.printer-controls .pc-header{padding:20px}.printer-controls .pc-speed button[aria-pressed=true]{background:var(--ok);color:#10231b}.printer-controls .pc-editor{background:var(--bg)}.printer-controls .pc-editor .pc-btn.primary{color:#10231b}.printer-controls .pc-header .pc-quiet{background:var(--field);border-radius:8px;padding:10px}.ams{background:var(--card)}.card{padding:15px}.card .name .sw2{width:28px;height:28px;border:5px solid #485457;box-shadow:inset 0 0 0 2px #151a1d}.card .verdict{font-size:12px}.card .acts>button{padding:9px 10px}.section-heading h2{font-size:18px}.room-dry-list{display:grid;gap:12px}.room-dry-unit{display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,1.4fr) auto;gap:24px;align-items:center;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:20px}.room-dry-unit h3{font-size:15px;margin:0 0 6px}.room-dry-unit p{font-size:12px;color:var(--mute);margin:0}.room-dry-unit .bar{margin:8px 0}.room-dry-unit .room-dry-actions{display:flex;gap:8px}.room-dry-unit button{padding:9px 12px}.room-dry-explainer{color:var(--mute);font-size:13px;line-height:1.5;margin:0 0 22px;max-width:740px}.room-dry-unit.blocked{border-color:#80613d}.room-dry-unit.blocked p.reason{color:var(--warn)}.room-unit-title{display:flex;justify-content:space-between;font-size:12px;gap:12px}.room-dry-footer{display:flex;gap:10px;justify-content:flex-end;margin-top:20px}.room-dry-footer button{padding:10px 14px}.room-dry-footer .stop{background:#392729}.room-settings-name{font-size:11px;color:var(--mute);padding:10px 14px;border-bottom:1px solid var(--line)}.room-backup-note{font-size:12px;color:var(--mute)}
 .room-dry-unit .room-dry-result{margin-top:12px;padding-top:10px;border-top:1px solid var(--line);line-height:1.45}.room-dry-result strong{font-weight:600;color:var(--fg)}.room-dry-result[data-outcome=completed] strong{color:var(--ok)}.room-dry-result[data-outcome=stopped] strong{color:var(--warn)}.room-dry-result[data-reason-code="8"] strong{color:var(--bad)}.room-dry-result small{display:block;color:var(--mute);font-size:11px;margin-top:3px}.room-dry-history{margin-top:7px;font-size:11px;color:var(--mute)}.room-dry-history summary{cursor:pointer}.room-dry-history ol{padding-left:20px;margin:6px 0 0}.room-dry-history li{margin:5px 0}
 .room-dry-unit .room-dry-humidity{display:inline-flex;gap:5px;align-items:center;margin-top:7px;font-size:12px;font-variant-numeric:tabular-nums;color:var(--mute)}.room-dry-humidity[data-status=dry]{color:var(--ok)}.room-dry-humidity[data-status=humid]{color:var(--warn)}
 @media(min-width:1400px){.room-feed{aspect-ratio:2.05}}
@@ -484,7 +484,7 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
  .room-printer{border-radius:12px}
  .room-printer-name{font-size:15px;padding:8px 12px}
  .room-feed{height:88px;aspect-ratio:auto}
- .room-feed :is(img,canvas.camera-surface){object-fit:contain}
+ .room-feed :is(img,canvas.camera-surface,video.camera-video){object-fit:contain}
  .room-feed-top{top:6px;left:10px;right:10px}
  .room-camera-note{font-size:9px}
  .room-job{left:10px;right:10px;bottom:8px;gap:8px}
@@ -504,7 +504,7 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
  .room-detailbar{gap:8px;margin-bottom:10px}.room-detailbar span{display:none}.room-detailbar button{min-height:44px;font-size:12px;padding:8px}
  nav#tabs{flex-wrap:nowrap;overflow-x:auto;margin:0 0 10px;padding-bottom:5px;scroll-snap-type:x proximity}
  .tab{min-width:125px;flex:0 0 auto;scroll-snap-align:start;padding:8px 10px;font-size:12px}
- #cam{margin-bottom:12px}#cam .envbox{padding:8px 10px}#cam .presets{width:auto;margin-left:auto}#cam :is(img,canvas.camera-surface){width:100%;max-height:240px;object-fit:contain}
+ #cam{margin-bottom:12px}#cam .envbox{padding:8px 10px}#cam .presets{width:auto;margin-left:auto}#cam :is(img,canvas.camera-surface,video.camera-video){width:100%;max-height:240px;object-fit:contain}
  .printer-current-action{padding:8px 10px;font-size:12px}
  #overview{gap:8px 14px;padding-bottom:10px}.summary-item>span,.summary-item small{font-size:10px}.summary-item strong{font-size:15px}
  .section-heading{margin:16px 0 8px}.section-heading h2{font-size:17px}.section-heading p{display:none}
@@ -522,12 +522,12 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
 }
 
 /* Reserve the camera area and reveal only once a stream has a decoded frame. */
-.room-feed :is(img,canvas.camera-surface).camera-fading,#cam :is(img,canvas.camera-surface).camera-fading{opacity:0;transition:opacity 2000ms cubic-bezier(.22,.61,.36,1)}
+.room-feed :is(img,canvas.camera-surface,video.camera-video).camera-fading,#cam :is(img,canvas.camera-surface).camera-fading{opacity:0;transition:opacity 2000ms cubic-bezier(.22,.61,.36,1)}
 .room-feed.camera-ready :is(img,canvas.camera-surface).camera-fading,#cam .camera-ready :is(img,canvas.camera-surface).camera-fading{opacity:1}
 .room-cam-empty,.camera-placeholder{background:radial-gradient(ellipse at 45% 40%,#20302f,#0b1012 75%);transition:opacity 450ms ease;pointer-events:none}
 .camera-ready .room-cam-empty,.camera-ready .camera-placeholder{opacity:0}
 .camera-stage{position:relative;height:clamp(180px,56.25vw,420px);background:#0b0d0f;overflow:hidden}
-#cam .camera-stage :is(img,canvas.camera-surface){position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain;object-position:center;background:transparent}
+#cam .camera-stage :is(img,canvas.camera-surface,video.camera-video){position:absolute;inset:0;width:100%;height:100%;max-width:none;max-height:none;object-fit:contain;object-position:center;background:transparent}
 .camera-placeholder{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute);font-size:12px}
 @media(max-width:700px){.camera-stage{height:clamp(180px,56.25vw,240px)}}
 /* Wide printer desk: full camera frame, filament route and controls share one row. */
@@ -574,7 +574,7 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
  #printer-detail .unit-actions{justify-content:flex-start}
 }
 
-@media(prefers-reduced-motion:reduce){.room-feed :is(img,canvas.camera-surface).camera-fading,#cam :is(img,canvas.camera-surface).camera-fading,.room-cam-empty,.camera-placeholder{transition:none}}
+@media(prefers-reduced-motion:reduce){.room-feed :is(img,canvas.camera-surface,video.camera-video).camera-fading,#cam :is(img,canvas.camera-surface).camera-fading,.room-cam-empty,.camera-placeholder{transition:none}}
 /* Short interaction feedback; live telemetry refreshes never trigger entrances. */
 @keyframes ui-panel-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:translateY(0) scale(1)}}
 @keyframes ui-backdrop-in{from{opacity:0}to{opacity:1}}
@@ -853,7 +853,7 @@ body.layout-resize-active{user-select:none}
  #room-home .room-heading h2{font-size:18px}.room-heading-actions{margin:0;width:auto}
  #room-home .room-power{margin:0 0 10px;min-height:18px}
  #room-wall .room-feed{display:grid;grid-template-columns:62% minmax(0,1fr);height:clamp(120px,38vw,180px);aspect-ratio:auto;background:var(--bg)}
- #room-wall .room-feed :is(img,canvas.camera-surface){inset:0 auto 0 0;width:62%;height:100%;object-fit:contain;object-position:center}
+ #room-wall .room-feed :is(img,canvas.camera-surface,video.camera-video){inset:0 auto 0 0;width:62%;height:100%;object-fit:contain;object-position:center}
  #room-wall .room-feed:after{display:none}
  #room-wall .room-cam-empty{inset:0 38% 0 0;padding:26px 10px;font-size:12px;line-height:1.4}
  #room-wall .room-feed-top{left:6px;right:calc(38% + 6px);top:5px;justify-content:flex-end;gap:0}
@@ -953,7 +953,7 @@ body.layout-resize-active{user-select:none}
 #camera-fullscreen .fullscreen-toolbar strong{flex:1;min-width:0}
 #camera-fullscreen button{min-height:44px;padding:8px 14px}
 #camera-fullscreen .fullscreen-picture{position:relative;flex:1;min-height:0;display:grid;place-items:center;padding-bottom:env(safe-area-inset-bottom)}
-#camera-fullscreen canvas{display:block;width:100%;height:100%;min-height:0;object-fit:contain}
+#camera-fullscreen :is(canvas,video){display:block;width:100%;height:100%;min-height:0;object-fit:contain;background:#000}#camera-fullscreen canvas[hidden]{display:none}
 #camera-fullscreen .fullscreen-wait{position:absolute;inset:0;display:grid;place-items:center;color:var(--mute)}
 #camera-fullscreen .fullscreen-wait[hidden]{display:none}
 #camera-fullscreen .fullscreen-status{position:absolute;bottom:max(12px,env(safe-area-inset-bottom));left:14px;background:#080d0ebb;padding:5px 9px;border-radius:6px;color:#d6dfdc;font-size:12px;pointer-events:none}
@@ -1052,7 +1052,7 @@ body:not(.room-detail-view) .menu .printer-only{display:none}.stock-scroll{overf
     <div class="dd"><a onclick="this.closest('.menu').classList.remove('open');addPrinterDlg()">Add a printer</a><a onclick="this.closest('.menu').classList.remove('open');roomShow('detail');openAttention('settings')">Sounds &amp; notifications</a><a onclick="this.closest('.menu').classList.remove('open');peopleDlg()">People &amp; sign-in</a><a onclick="signOut()">Sign out<span id="menu-me" class="meta"></span></a><div class="room-settings-name printer-only">This printer: <span id="room-settings-printer"></span></div><a class="printer-only" onclick="this.closest('.menu').classList.remove('open');editPrinterDlg()">Edit <span class="menu-printer-name"></span> details</a><a class="printer-only" onclick="this.closest('.menu').classList.remove('open');removePrinter()">Remove <span class="menu-printer-name"></span></a><button type="button" id="room-clear-storage" class="storage-clear-action" onclick="clearAllStorage()">Clear all printer USB files…</button><span id="room-clear-storage-status" class="storage-clear-status" role="status" aria-live="polite"></span></div></div>
 </div></header>
 <div id="banner" hidden></div>
-<main id="room-main"><section id="room-home"><div class="room-heading"><div><h2 id="room-heading-title">Your room, in one glance</h2><p id="room-heading-subtitle">Connecting to your printers…</p></div><div class="room-heading-actions"><button id="room-camera-toggle" onclick="roomToggleCameras()">Pause cameras</button><button id="room-plan" class="primary" onclick="roomShow('drying')">Plan drying</button><button id="room-stop-all" type="button" onclick="stopAll()" hidden>■ Stop all drying AMSs</button></div></div><section id="room-power" class="room-power" aria-label="Approximate current power load" hidden></section><div id="room-wall-layout" class="room-wall-layout"><aside class="room-zoom" aria-label="Printer grid zoom"><button type="button" onclick="roomSetZoom(ROOM_ZOOM+5)" aria-label="Enlarge printer cards" title="Enlarge cards">+</button><input id="room-zoom-slider" type="range" min="25" max="125" step="5" value="100" aria-label="Printer card zoom" aria-orientation="vertical" oninput="roomSetZoom(this.value)"><button type="button" onclick="roomSetZoom(ROOM_ZOOM-5)" aria-label="Shrink printer cards" title="Shrink cards">−</button><button type="button" id="room-zoom-value" class="room-zoom-value" onclick="roomSetZoom(100)" aria-label="Reset printer zoom to 100 percent" title="Reset to 100%">100%</button></aside><div id="room-wall-viewport" class="room-wall-viewport"><div id="room-wall" class="room-wall"></div></div></div><div id="room-drying-content" hidden><section class="stock-panel" aria-label="Filament stock"><div class="stock-toolbar"><div><h3>Filament stock</h3><p>One total per filament. Enter the spools you have available; spools already in an AMS are not counted. A newly inserted matching Bambu RFID spool reduces this number once.</p></div><button type="button" onclick="stockNew()">+ Add filament</button></div><div id="stock-alert" class="stock-alert" role="status" hidden></div><form id="stock-form" class="stock-form" hidden onsubmit="stockSave(event)"><input type="hidden" name="id"><label class="stock-product-choice">Filament<select name="product_key" required aria-label="Bambu filament"></select></label><label>Spools left<input name="unopened" type="number" min="0" max="100000" value="0" required></label><label>Order when at or below<input name="threshold" type="number" min="0" max="100000" placeholder="Optional"></label><div class="stock-form-actions"><button class="primary" type="submit">Save</button><button type="button" onclick="stockClose()">Cancel</button></div></form><p id="stock-message" role="status"></p><div class="stock-scroll"><table class="stock-table"><thead><tr><th>Filament</th><th>Spools left</th><th>Order threshold</th><th>Status</th><th></th></tr></thead><tbody id="stock-rows"></tbody></table></div></section><h3>Drying</h3><details class="room-dry-help"><summary>How drying works</summary><p class="room-dry-explainer">Filament retracts automatically when needed and the printer is idle. Least-dry spools come first. AMS units sharing printer power take turns; the printer always decides what power and temperature are available.</p></details><section id="room-drying-followup" class="room-followup" hidden aria-label="Drying request follow-up"><h3 id="room-followup-title" role="status" aria-live="polite"></h3><div id="room-followup-rows"></div></section><div id="room-drying-list" class="room-dry-list"></div><div class="room-dry-footer"><button class="primary" data-start-fleet onclick="dryAll()">Start all eligible AMS units</button><button class="stop" onclick="stopAll()">Stop all drying</button></div></div><div class="room-foot"><span>Open any printer for its live camera, filament and controls.</span><button class="room-link" onclick="addPrinterDlg()">+ Add printer</button></div></section><section id="printer-detail" hidden><div class="room-detailbar"><button onclick="roomShow('watch')">← Back to the room</button><span>Live controls · changes apply to this printer</span><div class="detail-layout-actions"><button type="button" id="layout-reset" hidden onclick="layoutReset()">Reset layout</button><button type="button" id="layout-edit" title="Drag panels directly to move them; drag edges to resize. Printer controls are inactive while editing." aria-pressed="false" onclick="layoutToggle()">Edit layout</button><button onclick="roomShow('drying')">All drying →</button></div></div><nav id="tabs" aria-label="Printers"></nav><section id="attention-panel" aria-labelledby="attention-title" hidden><div class="attention-top"><button type="button" class="attention-close-visible" onclick="ATTENTION_DEMO?closeAttention():dismissPrinterAlerts(P)" aria-label="Close printer alert">× Close</button><h2 class="attention-heading" id="attention-title">Printer alerts</h2><div class="attention-nav"><button onclick="ATTENTION_DEMO=false;openAttention('active')">Active</button><button onclick="ATTENTION_DEMO=false;openAttention('history')">History</button><button onclick="ATTENTION_DEMO=false;openAttention('settings')">Settings</button></div></div><p id="attention-subtitle"></p><div id="attention-content" aria-live="polite"></div><p id="attention-message" role="status"></p><div class="attention-actions" id="attention-actions"></div></section><div id="err"></div><div id="act"></div><div class="printer-dashboard" id="printer-dashboard">
+<main id="room-main"><section id="room-home"><div class="room-heading"><div><h2 id="room-heading-title">Your room, in one glance</h2><p id="room-heading-subtitle">Connecting to your printers…</p></div><div class="room-heading-actions"><button id="room-camera-toggle" onclick="roomToggleCameras()">Pause cameras</button><button id="room-smooth-toggle" type="button" onclick="wallToggleSmooth()" title="Show every camera at the printer's full 30 fps over one connection. Turn off on slow devices." hidden>Smooth video: on</button><button id="room-plan" class="primary" onclick="roomShow('drying')">Plan drying</button><button id="room-stop-all" type="button" onclick="stopAll()" hidden>■ Stop all drying AMSs</button></div></div><section id="room-power" class="room-power" aria-label="Approximate current power load" hidden></section><div id="room-wall-layout" class="room-wall-layout"><aside class="room-zoom" aria-label="Printer grid zoom"><button type="button" onclick="roomSetZoom(ROOM_ZOOM+5)" aria-label="Enlarge printer cards" title="Enlarge cards">+</button><input id="room-zoom-slider" type="range" min="25" max="125" step="5" value="100" aria-label="Printer card zoom" aria-orientation="vertical" oninput="roomSetZoom(this.value)"><button type="button" onclick="roomSetZoom(ROOM_ZOOM-5)" aria-label="Shrink printer cards" title="Shrink cards">−</button><button type="button" id="room-zoom-value" class="room-zoom-value" onclick="roomSetZoom(100)" aria-label="Reset printer zoom to 100 percent" title="Reset to 100%">100%</button></aside><div id="room-wall-viewport" class="room-wall-viewport"><div id="room-wall" class="room-wall"></div></div></div><div id="room-drying-content" hidden><section class="stock-panel" aria-label="Filament stock"><div class="stock-toolbar"><div><h3>Filament stock</h3><p>One total per filament. Enter the spools you have available; spools already in an AMS are not counted. A newly inserted matching Bambu RFID spool reduces this number once.</p></div><button type="button" onclick="stockNew()">+ Add filament</button></div><div id="stock-alert" class="stock-alert" role="status" hidden></div><form id="stock-form" class="stock-form" hidden onsubmit="stockSave(event)"><input type="hidden" name="id"><label class="stock-product-choice">Filament<select name="product_key" required aria-label="Bambu filament"></select></label><label>Spools left<input name="unopened" type="number" min="0" max="100000" value="0" required></label><label>Order when at or below<input name="threshold" type="number" min="0" max="100000" placeholder="Optional"></label><div class="stock-form-actions"><button class="primary" type="submit">Save</button><button type="button" onclick="stockClose()">Cancel</button></div></form><p id="stock-message" role="status"></p><div class="stock-scroll"><table class="stock-table"><thead><tr><th>Filament</th><th>Spools left</th><th>Order threshold</th><th>Status</th><th></th></tr></thead><tbody id="stock-rows"></tbody></table></div></section><h3>Drying</h3><details class="room-dry-help"><summary>How drying works</summary><p class="room-dry-explainer">Filament retracts automatically when needed and the printer is idle. Least-dry spools come first. AMS units sharing printer power take turns; the printer always decides what power and temperature are available.</p></details><section id="room-drying-followup" class="room-followup" hidden aria-label="Drying request follow-up"><h3 id="room-followup-title" role="status" aria-live="polite"></h3><div id="room-followup-rows"></div></section><div id="room-drying-list" class="room-dry-list"></div><div class="room-dry-footer"><button class="primary" data-start-fleet onclick="dryAll()">Start all eligible AMS units</button><button class="stop" onclick="stopAll()">Stop all drying</button></div></div><div class="room-foot"><span>Open any printer for its live camera, filament and controls.</span><button class="room-link" onclick="addPrinterDlg()">+ Add printer</button></div></section><section id="printer-detail" hidden><div class="room-detailbar"><button onclick="roomShow('watch')">← Back to the room</button><span>Live controls · changes apply to this printer</span><div class="detail-layout-actions"><button type="button" id="layout-reset" hidden onclick="layoutReset()">Reset layout</button><button type="button" id="layout-edit" title="Drag panels directly to move them; drag edges to resize. Printer controls are inactive while editing." aria-pressed="false" onclick="layoutToggle()">Edit layout</button><button onclick="roomShow('drying')">All drying →</button></div></div><nav id="tabs" aria-label="Printers"></nav><section id="attention-panel" aria-labelledby="attention-title" hidden><div class="attention-top"><button type="button" class="attention-close-visible" onclick="ATTENTION_DEMO?closeAttention():dismissPrinterAlerts(P)" aria-label="Close printer alert">× Close</button><h2 class="attention-heading" id="attention-title">Printer alerts</h2><div class="attention-nav"><button onclick="ATTENTION_DEMO=false;openAttention('active')">Active</button><button onclick="ATTENTION_DEMO=false;openAttention('history')">History</button><button onclick="ATTENTION_DEMO=false;openAttention('settings')">Settings</button></div></div><p id="attention-subtitle"></p><div id="attention-content" aria-live="polite"></div><p id="attention-message" role="status"></p><div class="attention-actions" id="attention-actions"></div></section><div id="err"></div><div id="act"></div><div class="printer-dashboard" id="printer-dashboard">
 <section class="dashboard-widget" data-widget="camera" data-size="medium"><div id="cam"></div></section>
 <section class="dashboard-widget" data-widget="temperatures" data-size="small"><div class="widget-control printer-controls" id="ctl-temperatures"></div></section>
 <section class="dashboard-widget" data-widget="fans" data-size="small"><section class="desk-panel desk-fans" aria-labelledby="fans-heading"><div class="desk-panel-heading"><h2 id="fans-heading">Fans status</h2><span id="fans-reading-status">Waiting for readings</span></div><dl class="desk-fan-list" id="fans-status"></dl></section></section>
@@ -1638,7 +1638,7 @@ function renderRoom(){
  const online=PRINTERS.filter(x=>roomOnline(roomInfo(x.name))),delayed=PRINTERS.filter(x=>roomInfo(x.name).refresh_delayed).length,offline=PRINTERS.length-online.length-delayed,printing=online.filter(x=>['RUNNING','PREPARE'].includes(roomInfo(x.name).print_state)).length,heating=online.filter(x=>roomInfo(x.name).heating).length,attention=online.filter(x=>attentionPending(x.name).length).length;
  $('#room-heading-title').textContent=ROOM_VIEW==='drying'?'Filament management':window.innerWidth<=700?'Your printers':'Your room, in one glance';
  $('#room-heading-subtitle').textContent=ROOM_VIEW==='drying'?'Stock, tagged spools and drying · live printer status':`${printing} printing · ${heating} drying${offline?' · '+offline+' offline':''}${delayed?' · reconnecting':''}${attention?' · '+attention+' need'+(attention===1?'s':'')+' help':''}`;
- $('#room-camera-toggle').hidden=ROOM_VIEW!=='watch';$('#room-camera-toggle').textContent=ROOM_CAMERAS?'Pause cameras':'Show cameras';$('#room-plan').hidden=false;$('#room-plan').textContent=ROOM_VIEW==='drying'?(ROOM_DRY_BUSY?'Checking AMS units…':'Start all eligible AMS units'):'Plan drying';$('#room-plan').disabled=ROOM_DRY_BUSY;$('#room-plan').onclick=()=>ROOM_VIEW==='drying'?dryAll():roomShow('drying');$('#room-stop-all').hidden=ROOM_VIEW!=='drying';
+ $('#room-camera-toggle').hidden=ROOM_VIEW!=='watch';wallSmoothButton();$('#room-camera-toggle').textContent=ROOM_CAMERAS?'Pause cameras':'Show cameras';$('#room-plan').hidden=false;$('#room-plan').textContent=ROOM_VIEW==='drying'?(ROOM_DRY_BUSY?'Checking AMS units…':'Start all eligible AMS units'):'Plan drying';$('#room-plan').disabled=ROOM_DRY_BUSY;$('#room-plan').onclick=()=>ROOM_VIEW==='drying'?dryAll():roomShow('drying');$('#room-stop-all').hidden=ROOM_VIEW!=='drying';
  $('#room-wall-layout').hidden=ROOM_VIEW!=='watch';$('#room-wall').hidden=ROOM_VIEW!=='watch';$('#room-drying-content').hidden=ROOM_VIEW!=='drying';
  roomRenderPower();
  if(ROOM_VIEW==='drying'){roomRenderDrying();return;}
@@ -1869,10 +1869,10 @@ function cameraFullscreenPaint(s){
  f.status.textContent=s.message||'Connecting camera…';
  if(!s.shown)return;
  if(f.canvas.width!==s.canvas.width||f.canvas.height!==s.canvas.height){f.canvas.width=s.canvas.width;f.canvas.height=s.canvas.height;}
- f.context.drawImage(s.canvas,0,0);f.wait.hidden=true;
+ f.context.drawImage(s.canvas,0,0);if(!f.video)f.wait.hidden=true;
 }
 function closeCameraFullscreen(){
- const f=CAMERA_FULLSCREEN;if(!f)return;CAMERA_FULLSCREEN=null;
+ const f=CAMERA_FULLSCREEN;if(!f)return;CAMERA_FULLSCREEN=null;f.video?.stop();if(f.resumePage)setTimeout(startCamWhenReady,0);
  if(document.fullscreenElement===f.dialog)document.exitFullscreen().catch(()=>{});
  f.dialog.close();f.dialog.remove();document.body.style.overflow=f.overflow;f.trigger?.focus?.();
 }
@@ -1889,8 +1889,12 @@ function openCameraFullscreen(name){
  // iPhone browsers without element fullscreen use the same full-viewport viewer.
  if(dialog.requestFullscreen)dialog.requestFullscreen().then(()=>{if(CAMERA_FULLSCREEN?.dialog!==dialog&&document.fullscreenElement===dialog)document.exitFullscreen().catch(()=>{});}).catch(()=>{});
  const session=CAMERA_CACHE.get(key);
+ CAMERA_FULLSCREEN.name=name;
+ // One full-rate stream per camera: the printer page hands its stream over while fullscreen is open.
+ if(CAM_VIDEO&&CAM_VIDEO.name===name&&cameraVideoUsable(name)){cameraVideoStop();CAMERA_FULLSCREEN.resumePage=true;}
+ cameraFullscreenVideo(CAMERA_FULLSCREEN);
  if(session&&!session.closed)cameraFullscreenPaint(session);
- else CAMERA_FULLSCREEN.wait.textContent='Start this camera to view its stream.';
+ else if(!CAMERA_FULLSCREEN.video)CAMERA_FULLSCREEN.wait.textContent='Start this camera to view its stream.';
 }
 document.addEventListener('fullscreenchange',()=>{const f=CAMERA_FULLSCREEN;if(!f)return;if(document.fullscreenElement===f.dialog)f.native=true;else if(f.native)closeCameraFullscreen();});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-camera-fullscreen]');if(b){e.preventDefault();openCameraFullscreen(b.dataset.cameraFullscreen);}});
@@ -1997,8 +2001,133 @@ function cameraFadeBegin(img){
  CAMERA_REVEALS.set(img,cancel);img.addEventListener('load',reveal);img.addEventListener('error',failed);
  timer=setTimeout(check,150);
 }
+// Room wall at full frame rate: every on-screen tile's camera arrives over ONE connection (/api/cams.mux),
+// because a browser keeps only ~6 connections per site. Off-screen tiles are left out, a tile whose
+// video cannot play (e.g. a phone's decoder limit) keeps pictures, and the switch turns it all off.
+let WALL_SMOOTH=!matchMedia('(max-width:700px)').matches;
+try{const v=localStorage.getItem('ams_wall_smooth');if(v!==null)WALL_SMOOTH=v==='1';}catch(e){}
+const WALL={conn:null,key:'',players:new Map(),visible:new Set(),timer:0,failed:{},lost:0,retryAt:0,errors:{},
+ cap:16,capUntil:0,off:new Set()};
+// Tiles whose video cannot play (decoder limit, codec, camera video off) keep pictures for 5 minutes.
+const WALL_FAIL_MS=300000;
+function wallToggleSmooth(){WALL_SMOOTH=!WALL_SMOOTH;try{localStorage.setItem('ams_wall_smooth',WALL_SMOOTH?'1':'0');}catch(e){}wallVideoClose();wallSmoothButton();roomSnapshots();}
+function wallSmoothButton(){const b=$('#room-smooth-toggle');if(!b)return;b.hidden=!CAMERA_VIDEO_MS||ROOM_VIEW!=='watch'||!ROOM_CAMERAS;b.textContent=WALL_SMOOTH?'Smooth video: on':'Smooth video: off';b.setAttribute('aria-pressed',WALL_SMOOTH?'true':'false');}
+function wallVideoWanted(){return WALL_SMOOTH&&!!CAMERA_VIDEO_MS&&ROOM_VIEW==='watch'&&ROOM_CAMERAS&&!document.hidden&&!DLG&&!CAMERA_FULLSCREEN;}
+function wallTile(name){return [...($('#room-wall')?.children||[])].find(x=>x.dataset.printer===name);}
+// Which tiles are on screen (with a margin). Measured directly: no layout events needed, and a page that
+// cannot measure its viewport treats every tile as visible.
+function wallVisible(){
+ const vh=innerHeight||document.documentElement.clientHeight,vw=innerWidth||document.documentElement.clientWidth,on=new Set();
+ for(const el of $('#room-wall')?.children||[]){const n=el.dataset.printer;if(!n)continue;
+  if(!vh||!vw){on.add(n);continue;}
+  const r=el.getBoundingClientRect();if(r.bottom>-150&&r.top<vh+150&&r.right>-150&&r.left<vw+150&&r.width>0)on.add(n);}
+ return on;
+}
+addEventListener('scroll',()=>{if(WALL.conn||WALL_SMOOTH)wallVideoSync();},{passive:true});
+function wallVideoNames(){
+ WALL.visible=wallVisible();if(WALL.cap<16&&Date.now()>WALL.capUntil)WALL.cap=16;   // a learned decoder limit is retried after 10 minutes
+ return PRINTERS.map(p=>p.name).filter(n=>WALL.visible.has(n)&&!WALL.off.has(n)&&!(WALL.failed[n]&&Date.now()-WALL.failed[n]<WALL_FAIL_MS)).slice(0,WALL.cap);}
+function wallVideoSync(){clearTimeout(WALL.timer);WALL.timer=setTimeout(wallVideoApply,700);}
+function wallVideoApply(){
+ wallSmoothButton();
+ const names=wallVideoWanted()?wallVideoNames():[],key=names.join('\n');
+ if(key===WALL.key&&(WALL.conn||!names.length)){wallVideoAttach();return;}
+ if(names.length&&!WALL.conn&&Date.now()<WALL.retryAt){wallVideoAttach();return;}   // back off after a lost connection
+ if(WALL.conn){WALL.conn.closed=true;WALL.conn.ctl.abort();WALL.conn=null;}
+ // Players of printers that stay on screen keep showing their last picture until the new stream is live.
+ for(const [n,p] of [...WALL.players])if(!names.includes(n))wallPlayerStop(n,p);
+ WALL.key=key;if(names.length)wallVideoOpen(names);
+}
+function wallVideoClose(){clearTimeout(WALL.timer);if(WALL.conn){WALL.conn.closed=true;WALL.conn.ctl.abort();WALL.conn=null;}WALL.key='';for(const [n,p] of [...WALL.players])wallPlayerStop(n,p);}
+function wallPlayerStop(name,p){p.player.stop();p.next?.player.stop();WALL.players.delete(name);const el=wallTile(name);const img=el?.querySelector('.room-feed img');if(img){img.classList.remove('camera-buffer-anchor');cameraFadeReset(img);}}
+// Put each video into its tile (the wall re-renders its tiles); a live one replaces the tile's pictures.
+const WALL_PENDING_STYLE='position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+function wallVideoAttach(){
+ for(const [name,p] of WALL.players){
+  const el=wallTile(name),feed=el?.querySelector('.room-feed');if(!feed)continue;
+  for(const e of [p,p.next])if(e&&e.player.video.parentElement!==feed)feed.append(e.player.video);
+  if(!p.live)continue;
+  if(ROOM_STREAMS.has(name))roomStopStream(name);
+  const img=feed.querySelector('img');if(img)img.classList.add('camera-buffer-anchor');
+  feed.classList.add('camera-ready');const empty=feed.querySelector('.room-cam-empty');if(empty)empty.hidden=true;
+  const note=el.querySelector('.room-camera-note');if(note)note.textContent=p.fps?`Live · ${p.fps} fps`:'Live';   // the wall re-renders its labels
+ }
+}
+async function wallVideoOpen(names){
+ const ctl=new AbortController(),conn={ctl,closed:false,names,streams:names.map(name=>({name,codec:'',init:null,entry:null}))};WALL.conn=conn;
+ let r;try{r=await fetch('/api/cams.mux?'+names.map(n=>'p='+encodeURIComponent(n)).join('&')+'&t='+Date.now(),{cache:'no-store',signal:ctl.signal});}catch(e){return wallConnLost(conn);}
+ if(conn.closed)return;if(!r.ok||!r.body){if(r.status===401||r.status===403)WALL.retryAt=Date.now()+600000;return wallConnLost(conn);}
+ const reader=r.body.getReader();let buf=new Uint8Array(0);
+ while(!conn.closed){
+  let c;try{c=await reader.read();}catch(e){break;}if(c.done)break;
+  const joined=new Uint8Array(buf.byteLength+c.value.byteLength);joined.set(buf,0);joined.set(c.value,buf.byteLength);buf=joined;
+  let off=0;
+  while(buf.byteLength-off>=6){
+   const kind=buf[off],i=buf[off+1],len=((buf[off+2]<<24)|(buf[off+3]<<16)|(buf[off+4]<<8)|buf[off+5])>>>0;
+   if(buf.byteLength-off-6<len)break;
+   wallFrame(conn,kind,i,buf.slice(off+6,off+6+len));off+=6+len;
+  }
+  buf=buf.slice(off);
+ }
+ wallConnLost(conn);
+}
+// A tile's player. It shows once it plays; until then the tile keeps its current stream or pictures.
+function wallEntry(conn,st){
+ const name=st.name,entry={live:false,player:null,fps:0};
+ entry.player=cameraVideoPlayer(name,st.codec,{label:`${name} camera`,
+  onLive:()=>{
+   const c=WALL.players.get(name);
+   if(!wallVideoWanted()||(c!==entry&&c?.next!==entry)){entry.player.stop();return;}   // replaced or the wall closed meanwhile
+   if(c&&c!==entry)c.player.stop();                                              // the new stream takes over now that it plays
+   entry.live=true;entry.player.video.style.cssText='';WALL.players.set(name,entry);WALL.lost=0;WALL.errors[name]=[];wallVideoAttach();},
+  onFps:fps=>{entry.fps=fps;if(WALL.players.get(name)!==entry)return;const note=wallTile(name)?.querySelector('.room-camera-note');if(note)note.textContent=`Live · ${fps} fps`;},
+  onFail:(why,transient)=>{
+   if(st.entry===entry)st.entry=null;                                            // the next keyframe starts a fresh player
+   const c=WALL.players.get(name);
+   if(c===entry){WALL.players.delete(name);if(entry.next){WALL.players.set(name,entry.next);entry.next.player.video.isConnected||wallVideoAttach();}}
+   else if(c?.next===entry)c.next=null;
+   const recent=(WALL.errors[name]=(WALL.errors[name]||[]).filter(t=>Date.now()-t<120000));recent.push(Date.now());
+   if(!transient||recent.length>=3){
+    WALL.failed[name]=Date.now();st.dead=true;
+    // A stream that never decodes on this device usually means its decoder is full: remember how many it managed.
+    // Only a stream that never shows a picture while others play points at a decoder limit.
+    if(why==='no picture'){const live=[...WALL.players.values()].filter(p=>p.live).length;if(live>0){WALL.cap=Math.min(WALL.cap,live);WALL.capUntil=Date.now()+600000;}}
+    wallVideoSync();
+   }
+   if(!WALL.players.get(name)?.live){const img=wallTile(name)?.querySelector('.room-feed img');if(img){img.classList.remove('camera-buffer-anchor');cameraFadeReset(img);}roomSnapshots();}
+  }});
+ entry.player.video.style.cssText=WALL_PENDING_STYLE;                           // decodes unseen until it plays, then swaps in
+ (wallTile(name)?.querySelector('.room-feed')||document.body).append(entry.player.video);
+ const cur=WALL.players.get(name);if(cur&&cur!==entry&&!cur.live){cur.player.stop();WALL.players.delete(name);}
+ const keep=WALL.players.get(name);
+ if(!keep)WALL.players.set(name,entry);else{if(keep.next&&keep.next!==entry)keep.next.player.stop();keep.next=entry;}
+ return entry;
+}
+function wallFrame(conn,kind,i,payload){
+ const st=conn.streams[i];if(!st||conn.closed)return;
+ if(kind===1){let info={};try{info=JSON.parse(new TextDecoder().decode(payload));}catch(e){}
+  if(info.name&&info.name!==st.name)return;                                        // never show a camera in another printer's tile
+  st.codec=info.codec||'';st.init=null;if(st.entry&&!st.entry.live){st.entry.player.stop();}st.entry=null;}
+ else if(kind===4){st.init=payload;}
+ else if(kind===2||kind===5){
+  if(st.dead||!st.init)return;
+  if(!st.entry){if(kind!==5)return;st.entry=wallEntry(conn,st);st.entry.player.push(st.init);}   // start only at a keyframe
+  st.entry.player.push(payload);
+ }else if(kind===3){
+  const why=new TextDecoder().decode(payload);
+  if(why.startsWith('off:')){WALL.off.add(st.name);st.dead=true;if(st.entry&&!st.entry.live)st.entry.player.end('codec');wallVideoSync();}   // off for good: pictures until reload
+  st.init=null;
+  // a live picture stays until the hub's reconnected stream swaps in; if that never comes, the player's
+  // own stall check falls back to pictures
+ }
+}
+function wallConnLost(conn){
+ if(WALL.conn!==conn){conn.closed=true;return;}
+ conn.closed=true;WALL.conn=null;WALL.key='';
+ WALL.lost++;WALL.retryAt=Math.max(WALL.retryAt,Date.now()+Math.min(30000,1500*2**Math.min(WALL.lost,5)));
+}
 function roomStopStream(name){const stream=ROOM_STREAMS.get(name);if(!stream)return;cameraBufferStop(stream.img);cameraFadeReset(stream.img);stream.img.onload=null;stream.img.onerror=null;stream.img.removeAttribute('src');ROOM_STREAMS.delete(name);}
-function roomStopSnapshots(){for(const c of ROOM_ABORTS)c.abort();ROOM_ABORTS.clear();for(const name of [...ROOM_STREAMS.keys()])roomStopStream(name);}
+function roomStopSnapshots(){for(const c of ROOM_ABORTS)c.abort();ROOM_ABORTS.clear();for(const name of [...ROOM_STREAMS.keys()])roomStopStream(name);wallVideoClose();}
 function roomDisposeImages(){roomStopSnapshots();dropCam();cameraStopAll();}
 function roomConnectStream(name,el,stream){
  const img=stream.img,url=`/api/p/${encodeURIComponent(name)}/api/cam.mjpg?t=${Date.now()}`;stream.url=url;stream.started=Date.now();stream.failed=false;
@@ -2010,6 +2139,7 @@ function roomStreamFailed(el,stream){
  el.querySelector('.room-cam-empty').hidden=false;el.querySelector('.room-cam-empty').textContent=stream.retries>=5?'Camera unavailable · pause and resume cameras to retry':'Camera reconnecting…';el.querySelector('.room-camera-note').textContent=stream.retries>=5?'Camera unavailable':'Reconnecting…';
 }
 async function roomSnapshots(){
+ wallVideoSync();
  if(ROOM_VIEW!=='watch'||!ROOM_CAMERAS||DLG||document.hidden||document.readyState!=='complete')return;
  // MQTT telemetry can briefly disconnect while the RTSP camera still works.
  // Do not blank or restart a camera because a status poll was delayed.
@@ -2019,6 +2149,7 @@ async function roomSnapshots(){
  for(const name of [...ROOM_STREAMS.keys()])if(!names.has(name)||!ROOM_STREAMS.get(name).img.isConnected)roomStopStream(name);
  const queue=[];
  for(const name of names){const el=[...$('#room-wall').children].find(x=>x.dataset.printer===name);if(!el)continue;
+  if(WALL.players.get(name)?.live)continue;   // this tile plays full-rate video
   let stream=ROOM_STREAMS.get(name);
   if(!stream){stream={img:el.querySelector('img'),retries:0,checked:Date.now(),failed:false};ROOM_STREAMS.set(name,stream);roomConnectStream(name,el,stream);}
   else if(stream.failed&&stream.retries<5&&Date.now()>=stream.retryAt)roomConnectStream(name,el,stream);
@@ -2035,7 +2166,7 @@ async function roomSnapshots(){
  try{await Promise.all([worker(),worker()]);}finally{ROOM_SNAP_BUSY=false;}
 }
 document.addEventListener('click',e=>{const b=e.target.closest('[data-room-open],[data-room-alert],[data-room-unit]');if(!b)return;if(b.dataset.roomUnit)roomOpenUnit(b.dataset.roomUnit,b.dataset.ams,Number(b.dataset.id));else roomOpen(b.dataset.roomOpen||b.dataset.roomAlert,b.dataset.roomAlert?'alerts':null);});
-document.addEventListener('visibilitychange',()=>{if(document.hidden){for(const s of CAMERA_CACHE.values())s.pause?.();}else{for(const s of CAMERA_CACHE.values())s.foreground?.();tick();load();roomSnapshots();startCamWhenReady();}});
+document.addEventListener('visibilitychange',()=>{if(document.hidden){for(const s of CAMERA_CACHE.values())s.pause?.();cameraVideoStop();wallVideoClose();const f=CAMERA_FULLSCREEN;if(f?.video){f.video.stop();f.video=null;f.canvas.hidden=false;}}else{for(const s of CAMERA_CACHE.values())s.foreground?.();tick();load();roomSnapshots();if(CAMERA_FULLSCREEN&&!CAMERA_FULLSCREEN.video){CAMERA_FULLSCREEN.tries=0;cameraFullscreenVideo(CAMERA_FULLSCREEN);}startCamWhenReady();}});
 window.addEventListener('online',()=>{tick();load();});
 window.addEventListener('pageshow',e=>{if(e.persisted){tick();load();roomSnapshots();startCamWhenReady();}});
 window.addEventListener('pagehide',roomDisposeImages);window.addEventListener('beforeunload',roomDisposeImages);window.addEventListener('load',roomSnapshots);setInterval(roomSnapshots,2000);
@@ -2213,7 +2344,7 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden&&camWanted
 // An MJPEG <img> is a request that never ends. On refresh the browser keeps that
 // socket until the server notices, and with only ~6 connections per origin the new
 // page's API calls queue behind it. Drop it explicitly before leaving.
-function dropCam(){try{const i=document.getElementById('camimg');if(i){cameraBufferStop(i);cameraFadeReset(i);i.removeAttribute('src');}}catch(e){}}
+function dropCam(){try{cameraVideoStop();const i=document.getElementById('camimg');if(i){cameraBufferStop(i);cameraFadeReset(i);i.removeAttribute('src');}}catch(e){}}
 window.addEventListener('pagehide',dropCam);
 window.addEventListener('beforeunload',dropCam);
 document.addEventListener('click',e=>{if(!e.target.closest('.menu'))document.querySelectorAll('.menu.open').forEach(m=>m.classList.remove('open'))});
@@ -2578,9 +2709,106 @@ function renderCtl(){
 }
 
 function renderPrinterAction(){const line=document.getElementById('printer-current-action');if(line)line.textContent=(D&&PC_DATA_PRINTER===P?D.current_action:null)||roomInfo(P)?.current_action||'Waiting for live printer status';}
+// Full-rate camera for the printer page and fullscreen: the printer's own 30 fps H.264, remuxed on the
+// host (never re-encoded) and played through Media Source. Brief interruptions (camera restart, a viewer
+// cut off for falling behind) reconnect the video; lasting errors switch to pictures and the video is
+// tried again a minute later.
+const CAMERA_VIDEO_MS=window.ManagedMediaSource||window.MediaSource;
+const CAMERA_VIDEO_FAILED={},CAM_VIDEO_RETRY={};let CAM_VIDEO=null;
+const CAMERA_VIDEO_TRANSIENT=new Set(['ended','stalled','backlog','connect','no picture','http 502','http 503','http 504']);
+function cameraVideoUsable(name){return !!CAMERA_VIDEO_MS&&!(CAMERA_VIDEO_FAILED[name]&&Date.now()-CAMERA_VIDEO_FAILED[name]<60000);}
+// One MSE player. Its bytes come from push(); end(why) closes it (the stream ended or broke).
+function cameraVideoPlayer(name,codec,{label,onLive,onFps,onFail}){
+ const video=document.createElement('video');video.className='camera-surface camera-video';video.muted=true;video.defaultMuted=true;video.playsInline=true;video.autoplay=true;video.disableRemotePlayback=true;video.setAttribute('playsinline','');video.setAttribute('aria-label',label||'Live printer camera');
+ const type=`video/mp4; codecs="${codec}"`;
+ let ms=null,sb=null,queue=[],queued=0,closed=false,counted=0,lastTime=-1,stalls=0,live=false,objectURL='',timer=0;
+ const stop=()=>{if(closed)return;closed=true;clearInterval(timer);try{video.pause();}catch(e){}video.removeAttribute('src');try{video.load();}catch(e){}if(objectURL)URL.revokeObjectURL(objectURL);video.remove();queue=[];};
+ const fail=why=>{if(closed)return;stop();const transient=CAMERA_VIDEO_TRANSIENT.has(why);if(!transient)CAMERA_VIDEO_FAILED[name]=Math.max(CAMERA_VIDEO_FAILED[name]||0,Date.now());onFail?.(why,transient);};
+ const join=parts=>{if(parts.length===1)return parts[0];let n=0;for(const p of parts)n+=p.byteLength;const out=new Uint8Array(n);let o=0;for(const p of parts){out.set(p,o);o+=p.byteLength;}return out;};
+ const trim=force=>{if(!sb||sb.updating||!video.buffered.length)return false;const start=video.buffered.start(0);if(video.currentTime-start>(force?1.5:15)){try{sb.remove(start,video.currentTime-1);return true;}catch(e){}}return false;};
+ const chase=()=>{if(!video.buffered.length)return;const i=video.buffered.length-1,end=video.buffered.end(i);
+  // stay on the live edge: a stream that fell behind jumps forward instead of playing old frames
+  if(end-video.currentTime>0.9||video.currentTime<video.buffered.start(i))video.currentTime=Math.max(video.buffered.start(i),end-0.25);
+  if(video.paused)video.play().catch(()=>{});};
+ const pump=()=>{if(closed||!sb||sb.updating||!queue.length)return;const data=join(queue);queue=[];queued=0;
+  try{sb.appendBuffer(data);}catch(e){if(e.name==='QuotaExceededError'){queue=[data];queued=data.byteLength;if(!trim(true))fail('backlog');return;}fail('append');}};
+ // Count decoded frames (they keep coming when the picture is scrolled off-screen or the window is in the
+ // background, unlike painted frames), so the fps shown is the stream's real rate.
+ const decoded=()=>video.getVideoPlaybackQuality?video.getVideoPlaybackQuality().totalVideoFrames:-1;
+ timer=setInterval(()=>{
+  if(closed||document.hidden)return;
+  // Phones may pause a muted video that is off-screen; that is not a stall. Ask it to play and wait.
+  if(live&&video.paused){video.play().catch(()=>{});stalls=0;return;}
+  const total=decoded(),moved=total>=0?total-counted:(video.currentTime!==lastTime?1:0);if(total>=0)counted=total;lastTime=video.currentTime;
+  if(moved>0){stalls=0;if(!live){live=true;onLive?.();}if(total>=0)onFps?.(Math.round(moved/2));}
+  else if(++stalls>=(live?3:15))fail(live?'stalled':'no picture');   // 30 s for the first picture: the host waits up to 20 s
+ },2000);
+ if(!codec||!CAMERA_VIDEO_MS.isTypeSupported(type)){setTimeout(()=>fail('codec'),0);return {video,stop,name,push(){},end(){}};}
+ ms=new CAMERA_VIDEO_MS();objectURL=URL.createObjectURL(ms);video.src=objectURL;
+ ms.addEventListener('sourceopen',()=>{if(closed)return;
+  try{sb=ms.addSourceBuffer(type);sb.mode='segments';}catch(e){return fail('decode');}
+  sb.addEventListener('updateend',()=>{chase();if(!trim(false))pump();});sb.addEventListener('error',()=>fail('decode'));
+  video.play().catch(()=>{});pump();},{once:true});
+ return {video,name,stop,
+  push(bytes){if(closed)return;queue.push(bytes);queued+=bytes.byteLength;if(queued>24e6)return fail('backlog');pump();},
+  end(why){fail(why||'ended');}};
+}
+// The printer page and fullscreen: one printer, its own connection.
+function cameraVideoStart(name,opts){
+ const ctl=new AbortController();let player=null,closed=false;
+ const holder={video:null,name,stop(){closed=true;ctl.abort();placeholder.remove();player?.stop();}};
+ const fail=why=>{if(closed)return;closed=true;ctl.abort();if(player)player.end(why);else{placeholder.remove();const transient=CAMERA_VIDEO_TRANSIENT.has(why);if(!transient)CAMERA_VIDEO_FAILED[name]=Math.max(CAMERA_VIDEO_FAILED[name]||0,Date.now());opts.onFail?.(why,transient);}};
+ // The <video> exists before the first byte arrives so callers can place it at once.
+ var placeholder=document.createElement('video');placeholder.className='camera-surface camera-video';placeholder.muted=true;holder.video=placeholder;
+ (async()=>{
+  let r;try{r=await fetch(`/api/p/${encodeURIComponent(name)}/api/cam.mp4?t=${Date.now()}`,{cache:'no-store',signal:ctl.signal});}catch(e){return fail('connect');}
+  if(closed)return;
+  if(!r.ok||!r.body){let text='';try{text=await r.text();}catch(e){}
+   if(/unavailable on this printer/.test(text)){CAMERA_VIDEO_FAILED[name]=Date.now()+864e5;return fail('off');}   // video is off on the host: pictures until the page reloads
+   try{ctl.abort();}catch(e){}return fail('http '+r.status);}
+  player=cameraVideoPlayer(name,r.headers.get('X-Codec'),{...opts,onFail:(why,transient)=>{closed=true;ctl.abort();opts.onFail?.(why,transient);}});
+  placeholder.replaceWith(player.video);holder.video=player.video;
+  const reader=r.body.getReader();
+  while(!closed){let chunk;try{chunk=await reader.read();}catch(e){break;}if(chunk.done)break;player.push(chunk.value);}
+  if(!closed)player.end('ended');
+ })();
+ return holder;
+}
+function cameraVideoStop(){if(CAM_VIDEO){CAM_VIDEO.stop();const img=CAM_VIDEO.img;CAM_VIDEO=null;if(img){img.classList.remove('camera-buffer-anchor');cameraFadeReset(img);}}}
 function startCamWhenReady(){
- const img=document.getElementById('camimg');if(!img||DLG||document.hidden||!camWanted()||!img.dataset.src||CAMERA_BUFFERS.has(img))return;
- cameraBufferStart(img,img.dataset.src,()=>{const n=$('#camnote');if(n)n.textContent='Camera reconnecting…';});
+ const img=document.getElementById('camimg');if(!img||DLG||document.hidden||!camWanted()||!img.dataset.src||CAMERA_BUFFERS.has(img)||(CAM_VIDEO&&CAM_VIDEO.img===img))return;
+ const name=P,note=()=>$('#camnote');
+ if(CAMERA_FULLSCREEN?.name===name&&CAMERA_FULLSCREEN.video)return;   // fullscreen is showing this camera; one stream is enough
+ if(cameraVideoUsable(name)){
+  cameraVideoStop();
+  const v=cameraVideoStart(name,{label:`${name} live camera`,
+   onLive:()=>{CAM_VIDEO_RETRY[name]=0;const shell=img.closest('.camera-stage');shell?.classList.add('camera-ready');const ph=shell?.querySelector('.camera-placeholder');if(ph)ph.hidden=true;if(note())note().textContent='Live';},
+   onFps:fps=>{if(note()&&CAM_VIDEO===v)note().textContent=`Live · ${fps} fps`;},
+   onFail:(why,transient)=>{
+    if(CAM_VIDEO!==v)return;CAM_VIDEO=null;img.classList.remove('camera-buffer-anchor');
+    const still=()=>document.getElementById('camimg')===img&&P===name&&!document.hidden&&camWanted();
+    if(!still())return;
+    const tries=CAM_VIDEO_RETRY[name]=(CAM_VIDEO_RETRY[name]||0)+1;
+    if(transient&&tries<=4){if(note())note().textContent='Reconnecting video…';setTimeout(()=>{if(still()&&!CAM_VIDEO&&!CAMERA_BUFFERS.has(img))startCamWhenReady();},1500*tries);return;}
+    CAMERA_VIDEO_FAILED[name]=Date.now();CAM_VIDEO_RETRY[name]=0;
+    cameraBufferStart(img,img.dataset.src,()=>{const n=note();if(n)n.textContent='Camera reconnecting…';});
+    setTimeout(()=>{if(still()&&CAMERA_BUFFERS.has(img)){cameraBufferStop(img);startCamWhenReady();}},61000);   // then try full rate again
+   }});
+  v.img=img;CAM_VIDEO=v;img.after(v.video);img.classList.add('camera-buffer-anchor');return;
+ }
+ cameraBufferStart(img,img.dataset.src,()=>{const n=note();if(n)n.textContent='Camera reconnecting…';});
+}
+function cameraFullscreenVideo(f){
+ if(!cameraVideoUsable(f.name))return false;
+ const v=cameraVideoStart(f.name,{label:`${f.name} camera`,
+  onLive:()=>{if(CAMERA_FULLSCREEN!==f||f.video!==v)return;f.tries=0;f.wait.hidden=true;f.canvas.hidden=true;f.status.textContent='Live';},
+  onFps:fps=>{if(CAMERA_FULLSCREEN===f&&f.video===v)f.status.textContent=`Live · ${fps} fps`;},
+  onFail:(why,transient)=>{
+   if(CAMERA_FULLSCREEN!==f||f.video!==v)return;f.video=null;f.canvas.hidden=false;f.tries=(f.tries||0)+1;
+   if(transient&&f.tries<=4&&!document.hidden){f.status.textContent='Reconnecting video…';setTimeout(()=>{if(CAMERA_FULLSCREEN===f&&!f.video&&!document.hidden)cameraFullscreenVideo(f);},1500*f.tries);return;}
+   const s=CAMERA_CACHE.get(f.key);if(s&&!s.closed)cameraFullscreenPaint(s);else{f.wait.hidden=false;f.wait.textContent='Camera unavailable right now · close and reopen to retry.';}
+  }});
+ f.video=v;f.canvas.after(v.video);return true;
 }
 window.addEventListener('load',()=>setTimeout(startCamWhenReady,0),{once:true});
 function renderCameraJob(){

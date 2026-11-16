@@ -99,9 +99,12 @@ def serve(open_browser=False, port=None):
             if not host_ok(self.headers.get("Host")): return self._send(421, json.dumps({"error": "Unknown host."}))
             if self.path.startswith("/api/cam.jpg"): cam_snapshot(self)
             elif self.path.startswith("/api/cam.mjpg"): cam_stream(self)
+            elif self.path.startswith("/api/cam.mp4"): cam_video(self)
             elif self.path.startswith("/api/cam_status"): self._send(200, json.dumps(
                 {"ffmpeg": bool(ffmpeg_bin()), "frames": CAM["frames"], "age": round(now() - (CAM["last"] or 0), 1),
-                 "viewers": len(CAM["clients"]), "running": bool(CAM["proc"] and CAM["proc"].poll() is None)}))
+                 "viewers": len(CAM["clients"]), "running": bool(CAM["proc"] and CAM["proc"].poll() is None),
+                 "video_viewers": len(CAM["vclients"]), "video_fragments": CAM["vframes"], "video_codec": CAM["codec"],
+                 "video_age": round(now() - (CAM["vlast"] or 0), 1), "video_off": CAM["no_video"]}))
             elif self.path.startswith("/api/rev"): self._send(200, json.dumps(rev_data()))
             elif self.path.startswith("/api/temp_history"): self._send(200, json.dumps(TEMP_HISTORY[-360:]))
             elif self.path.startswith("/api/state"): self._send(200, json.dumps(report_data()))
