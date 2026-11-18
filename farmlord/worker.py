@@ -11,6 +11,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 from farmlord.spools import *  # noqa: F401,F403
 from farmlord.views import *  # noqa: F401,F403
 from farmlord.mqtt_client import *  # noqa: F401,F403
@@ -55,6 +56,7 @@ def serve(open_browser=False, port=None):
     rotate_snapshots()   # before the MQTT thread starts writing
     threading.Thread(target=mqtt_loop, daemon=True).start()
     threading.Thread(target=temp_history_loop, daemon=True).start()
+    threading.Thread(target=preview_loop, daemon=True).start()
     threading.Thread(target=lambda: (time.sleep(3), errdb_refresh_now()), daemon=True).start()
     def auto_thread():
         time.sleep(30)
@@ -105,6 +107,9 @@ def serve(open_browser=False, port=None):
                  "viewers": len(CAM["clients"]), "running": bool(CAM["proc"] and CAM["proc"].poll() is None),
                  "video_viewers": len(CAM["vclients"]), "video_fragments": CAM["vframes"], "video_codec": CAM["codec"],
                  "video_age": round(now() - (CAM["vlast"] or 0), 1), "video_off": CAM["no_video"]}))
+            elif self.path.startswith("/api/preview.png"):
+                png = preview_png()
+                self._send(200, png, "image/png") if png else self._send(404, json.dumps({"error": "no preview"}))
             elif self.path.startswith("/api/rev"): self._send(200, json.dumps(rev_data()))
             elif self.path.startswith("/api/temp_history"): self._send(200, json.dumps(TEMP_HISTORY[-360:]))
             elif self.path.startswith("/api/state"): self._send(200, json.dumps(report_data()))

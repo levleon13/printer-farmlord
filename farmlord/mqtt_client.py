@@ -11,6 +11,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 from farmlord.spools import *  # noqa: F401,F403
 from farmlord.views import *  # noqa: F401,F403
 
@@ -162,6 +163,7 @@ def mqtt_loop():
                 tr.state.setdefault("seen_since", now())
                 tr.state["print_pct"] = pr.get("mc_percent"); tr.state["print_layer"] = pr.get("layer_num"); tr.state["print_layers"] = pr.get("total_layer_num")
                 if pr.get("subtask_name"): tr.state["print_name"] = pr.get("subtask_name")
+                if pr.get("plate_idx") is not None: tr.state["print_plate"] = pr.get("plate_idx")
         if "gcode_state" in pr:
             with LOCK:
                 # The API may have rebound a spool since the last MQTT report.

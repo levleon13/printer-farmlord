@@ -11,6 +11,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 from farmlord.spools import *  # noqa: F401,F403
 
 def current_printer_action(state):
@@ -179,6 +180,8 @@ def rev_data():
     except Exception: pass
     err = error_data(st); parts.append(str(err))
     camera_warning = camera_warning_status(); parts.append(str(camera_warning))
+    preview = preview_info(st)
+    if preview: parts.append(str(preview))
     dry_faults = drying_faults(st); parts.append(str(dry_requests()))
     rev = hashlib.sha1("|".join(map(str, parts)).encode()).hexdigest()[:12]
     room_units = []
@@ -208,7 +211,7 @@ def rev_data():
     identities = [{k: row.get(k) for k in ("key", "type", "empty", "setup_required", "pending", "reading", "color", "rfid", "remaining", "loaded")}
                   for unit in room_units for row in unit["spools"]]
     rev = hashlib.sha1((rev + json.dumps(identities, sort_keys=True)).encode()).hexdigest()[:12]
-    return dict(current_action=current_printer_action(st), estimated_power=estimated_power(st), nozzle_source=nozzle_source, tray_now=st.get("tray_now"), room_units=room_units, print_name=st.get("print_name"), rev=rev, pullback_retry=pullback_retry_data(st), errors=err, process_faults=dry_faults, has_error=bool(err["print_error"] or err["hms"] or dry_faults), camera_warning=camera_warning, print_state=st.get("print_state"), print_pct=st.get("print_pct"),
+    return dict(current_action=current_printer_action(st), estimated_power=estimated_power(st), nozzle_source=nozzle_source, tray_now=st.get("tray_now"), room_units=room_units, print_name=st.get("print_name"), preview=preview, rev=rev, pullback_retry=pullback_retry_data(st), errors=err, process_faults=dry_faults, has_error=bool(err["print_error"] or err["hms"] or dry_faults), camera_warning=camera_warning, print_state=st.get("print_state"), print_pct=st.get("print_pct"),
                 print_left_min=st.get("print_left_min"), heating=heating,
                 needs=sum(1 for p in pcts if p < 60), spools=len(pcts),
                 mqtt=STATUS.get("mqtt"), error=STATUS.get("error"),

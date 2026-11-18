@@ -11,6 +11,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 
 def move_candidates(hours=72):
     """Spools removed from any slot on any printer within the last N hours — likely candidates for 'did you move X here?'."""

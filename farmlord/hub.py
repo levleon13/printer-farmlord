@@ -11,6 +11,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 from farmlord.spools import *  # noqa: F401,F403
 from farmlord.views import *  # noqa: F401,F403
 from farmlord.mqtt_client import *  # noqa: F401,F403
@@ -1066,6 +1067,19 @@ def hub(open_browser=False):
             finally:
                 stop.set()
 
+        def _preview(self):
+            """The plate picture of a printer's current or last job. The page asks with ?k=<job key>, so a
+            browser may keep it until the job changes instead of fetching it on every redraw."""
+            import urllib.request, urllib.parse
+            name = urllib.parse.unquote(self.path.split("/", 4)[3]); w = workers.get(name)
+            try:
+                if not w: raise ValueError
+                with urllib.request.urlopen(f"http://127.0.0.1:{w['port']}/api/preview.png", timeout=5) as r: png = r.read()
+            except Exception:
+                return self._send(404, b"", "image/png")
+            self.send_response(200); self.send_header("Content-Type", "image/png"); self.send_header("Content-Length", str(len(png)))
+            self.send_header("Cache-Control", "private, max-age=86400" if "k=" in self.path else "no-store")
+            self.send_header("X-AMS-UI-Version", UI_VERSION); self.end_headers(); self.wfile.write(png)
         def _proxy(self, data=None):
             import urllib.parse
             parts = self.path.split("/", 4)      # '', 'api', 'p', name, rest
@@ -1094,6 +1108,8 @@ def hub(open_browser=False):
                         self._send(r.status, r.read(), "image/jpeg")
                 except Exception: self._send(503, b"", "image/jpeg")
                 return
+            if self.path.startswith("/api/p/") and "/api/preview.png" in self.path:
+                return self._preview()
             if "/api/cam.mjpg" in self.path:
                 import urllib.request, urllib.parse
                 parts = self.path.split("/", 4); name = urllib.parse.unquote(parts[3]); w = workers.get(name)

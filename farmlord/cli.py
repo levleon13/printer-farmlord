@@ -35,6 +35,7 @@ from farmlord.rfid import *  # noqa: F401,F403
 from farmlord.controls import *  # noqa: F401,F403
 from farmlord.alerts import *  # noqa: F401,F403
 from farmlord.camera import *  # noqa: F401,F403
+from farmlord.preview import *  # noqa: F401,F403
 from farmlord.spools import *  # noqa: F401,F403
 from farmlord.views import *  # noqa: F401,F403
 from farmlord.mqtt_client import *  # noqa: F401,F403

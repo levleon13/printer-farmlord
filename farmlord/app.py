@@ -8,7 +8,7 @@ runtime (`global X`) are only ever read inside their own module, so no module ho
 import importlib
 
 MODULES = ["core", "materials", "ams", "errors", "tracker", "actions", "drying", "rfid", "controls", "alerts",
-           "camera", "spools", "views", "mqtt_client", "pages", "worker", "hub", "cli"]
+           "camera", "preview", "spools", "views", "mqtt_client", "pages", "worker", "hub", "cli"]
 
 loaded = [importlib.import_module(f"farmlord.{m}") for m in MODULES]
 shared = {}

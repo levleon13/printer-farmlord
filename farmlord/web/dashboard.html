@@ -617,7 +617,7 @@ body.room-drying-view main#room-main{max-width:none;width:100%;margin-left:auto;
 #printer-detail #cam .presets{gap:8px}
 #printer-detail .printer-current-action{padding:8px 12px;font-size:12px}
 #printer-job .pc-job{margin:0;padding:14px;display:flex;flex-wrap:wrap;gap:12px;border:0}
-#printer-job .pc-job>div:first-child{width:100%;min-width:0}
+#printer-job .pc-job>div:first-of-type{width:100%;min-width:0}
 #printer-job .pc-jobtitle{font-size:14px}
 #printer-job .pc-progressline{flex-wrap:wrap;font-size:12px;gap:8px}
 #printer-job .pc-progress{max-width:none;min-width:60px}
@@ -805,7 +805,7 @@ body.layout-resize-active{user-select:none}
 
 #cam #printer-job{flex:none;border-top:1px solid var(--line)}
 #cam #printer-job .pc-job{padding:10px 12px;gap:8px;align-items:center}
-#cam #printer-job .pc-job>div:first-child{width:auto;flex:1 1 260px}
+#cam #printer-job .pc-job>div:first-of-type{width:auto;flex:1 1 260px}
 #cam #printer-job .pc-actions{flex:none;margin-left:auto}
 #cam #printer-job .pc-jobtitle{font-size:13px}
 #cam #printer-job .pc-progressline{font-size:11px}
@@ -917,6 +917,19 @@ body.layout-resize-active{user-select:none}
 .card .name{flex-wrap:wrap}
 .room-filament-label>span:last-child{min-width:0;overflow-wrap:anywhere}
 .room-feed img.camera-buffer-anchor,#cam img.camera-buffer-anchor{display:none!important}
+.room-feed img.room-preview{position:absolute;z-index:2;top:12px;left:14px;right:auto;bottom:auto;inset:12px auto auto 14px;height:min(62%,110px);width:auto;aspect-ratio:1;object-fit:contain;background:#eef2f1;border:1px solid #ffffff59;border-radius:8px;padding:3px;box-shadow:0 2px 10px #0006;pointer-events:none;opacity:1}
+.room-feed img.room-preview.is-last{opacity:.72}
+.room-feed img.room-preview[hidden]{display:none}
+@media(hover:hover){
+ .room-feed img.room-preview,#cam #printer-job img.pc-preview{pointer-events:auto;cursor:zoom-in;transform-origin:0 0;transition:transform .16s ease,opacity .16s ease}
+ .room-feed img.room-preview:hover,#cam #printer-job img.pc-preview:hover{transform:scale(2);opacity:1;position:relative;z-index:6;box-shadow:0 8px 28px #000a}
+ .room-feed img.room-preview:hover{position:absolute}
+ /* the tile and the camera panel clip their content; let the enlarged picture spill over while it is hovered */
+ .room-printer:has(img.room-preview:hover),.room-feed:has(img.room-preview:hover),#cam:has(img.pc-preview:hover){overflow:visible}
+ .room-printer:has(img.room-preview:hover),#cam:has(img.pc-preview:hover){position:relative;z-index:5}
+}
+#room-wall .room-feed img.room-preview{inset:6px auto auto 6px;height:min(46%,84px);width:auto}
+#cam #printer-job img.pc-preview,#printer-job img.pc-preview{width:76px;height:76px;max-width:none;max-height:none;flex:none;display:block;object-fit:contain;border-radius:8px;background:#eef2f1;border:1px solid var(--pc-line);padding:3px}
 .room-printer-name{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .camera-expand{display:inline-flex;align-items:center;justify-content:center;gap:6px;min-height:36px;padding:6px 10px;font-size:12px;flex:none}
 .camera-expand svg{width:16px;height:16px}
@@ -1632,6 +1645,16 @@ function roomCardBody(x,v){
  return {job:`<div><strong>${roomText(!online?'Waiting for this printer':busy?v.print_name||'Current print':'Ready for the next print')}</strong><small>${roomText((online?'':'Last report · ')+(busy?(v.print_state==='PREPARE'?'Preparing':v.print_state==='PAUSE'?'Paused':'Printing'):'Printer idle'))}</small></div><div class="room-left">${busy?`<b class="room-pct"${online?'':' style="opacity:.55"'}>${pct}%</b>`:''}${roomText(online?(busy&&v.print_left_min!=null?hm(v.print_left_min):'Idle'):'—')}<small>${online&&busy?'remaining':online?'ready when you are':'check connection'}</small>${online&&busy&&v.print_left_min!=null?`<small class="room-eta">free ≈ ${new Date(Date.now()+v.print_left_min*60000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</small>`:''}</div>`,pct,
  body:`<div class="room-statusline"><span class="room-status ${!online?'offline':issue?'issue':''}">${issue?`<button class="room-link" data-room-alert="${roomText(x.name)}" title="${roomText(issue)}">Needs attention →</button>`:roomText(cameraNote||roomStatus(v,x.name))}</span><button class="room-link" data-room-open="${roomText(x.name)}">Open printer ↗</button></div>${roomLiveSummary(v)}${roomFilamentRoute(units,online,v,x.name)}`,issue};
 }
+function previewURL(name,p){return `/api/p/${encodeURIComponent(name)}/api/preview.png?k=${encodeURIComponent(p.key)}`;}
+function roomPreview(img,name,v){
+ const p=v.preview;if(!img)return;
+ if(!p?.key){img.hidden=true;img.removeAttribute('src');delete img.dataset.key;return;}
+ const busy=['RUNNING','PREPARE','PAUSE'].includes(v.print_state),src=previewURL(name,p);
+ if(img.dataset.key!==p.key){img.dataset.key=p.key;img.dataset.retry='0';img.removeAttribute('src');}
+ // One failed load (worker restarting, slow reply) is retried after 30 s instead of hiding the picture for the whole job.
+ if(!img.getAttribute('src')&&Date.now()>=Number(img.dataset.retry||0)){img.hidden=true;img.onload=()=>{img.hidden=false;};img.onerror=()=>{img.hidden=true;img.removeAttribute('src');img.dataset.retry=String(Date.now()+30000);};img.src=src;}
+ img.classList.toggle('is-last',!busy);img.title=(busy?'Printing: ':'Last print: ')+(p.name||v.print_name||'');img.alt=img.title;
+}
 function renderRoom(){
  if(!$('#room-home')||ROOM_VIEW==='detail')return;
  attentionBadge();
@@ -1646,8 +1669,9 @@ function renderRoom(){
  // Keep image elements mounted across telemetry updates: no stream resets.
  const names=PRINTERS.map(x=>x.name);for(const el of [...wall.children])if(!names.includes(el.dataset.printer))el.remove();
  const nextFree=PRINTERS.map(x=>({n:x.name,v:roomInfo(x.name)})).filter(o=>roomOnline(o.v)&&['RUNNING','PREPARE'].includes(o.v.print_state)&&Number.isFinite(o.v.print_left_min)).sort((a,b)=>a.v.print_left_min-b.v.print_left_min)[0]?.n;
- for(const x of PRINTERS){let el=[...wall.children].find(e=>e.dataset.printer===x.name);if(!el){el=document.createElement('article');el.className='room-printer';el.dataset.printer=x.name;el.innerHTML=`<h3 class="room-printer-name"><span>${roomText(x.name)}</span><span class="room-printer-actions"><button type="button" class="room-movement-launch" data-movement-window="${roomText(x.name)}" aria-label="Open movement controls and live camera for ${roomText(x.name)} in a new window">Move + camera ↗</button><button type="button" class="camera-expand" data-camera-fullscreen="${roomText(x.name)}" aria-label="Fullscreen camera for ${roomText(x.name)}" title="Fullscreen camera">${cameraExpandIcon()}<span>Fullscreen</span></button></span></h3><button type="button" class="room-feed" data-room-open="${roomText(x.name)}" aria-label="Open ${roomText(x.name)}"><span class="room-cam-empty">Connecting camera…</span><img class="camera-fading" alt="${roomText(x.name)} camera" decoding="async"><span class="room-feed-top"><span>${roomText(x.name)}</span><span class="room-camera-note">Connecting…</span></span><span class="room-job"></span></button><div class="room-progress"><i></i></div><div class="room-issue" hidden><span></span><button class="room-link" data-room-alert="${roomText(x.name)}">Help me fix it →</button><button type="button" class="alert-close" data-dismiss-alert="${roomText(x.name)}" aria-label="Dismiss alert for ${roomText(x.name)}" title="Dismiss alert">×</button></div><div class="room-cardbody"></div>`;wall.append(el);}
+ for(const x of PRINTERS){let el=[...wall.children].find(e=>e.dataset.printer===x.name);if(!el){el=document.createElement('article');el.className='room-printer';el.dataset.printer=x.name;el.innerHTML=`<h3 class="room-printer-name"><span>${roomText(x.name)}</span><span class="room-printer-actions"><button type="button" class="room-movement-launch" data-movement-window="${roomText(x.name)}" aria-label="Open movement controls and live camera for ${roomText(x.name)} in a new window">Move + camera ↗</button><button type="button" class="camera-expand" data-camera-fullscreen="${roomText(x.name)}" aria-label="Fullscreen camera for ${roomText(x.name)}" title="Fullscreen camera">${cameraExpandIcon()}<span>Fullscreen</span></button></span></h3><button type="button" class="room-feed" data-room-open="${roomText(x.name)}" aria-label="Open ${roomText(x.name)}"><span class="room-cam-empty">Connecting camera…</span><img class="camera-fading" alt="${roomText(x.name)} camera" decoding="async"><span class="room-feed-top"><span>${roomText(x.name)}</span><span class="room-camera-note">Connecting…</span></span><span class="room-job"></span><img class="room-preview" alt="" hidden decoding="async"></button><div class="room-progress"><i></i></div><div class="room-issue" hidden><span></span><button class="room-link" data-room-alert="${roomText(x.name)}">Help me fix it →</button><button type="button" class="alert-close" data-dismiss-alert="${roomText(x.name)}" aria-label="Dismiss alert for ${roomText(x.name)}" title="Dismiss alert">×</button></div><div class="room-cardbody"></div>`;wall.append(el);}
  const v=roomInfo(x.name),c=roomCardBody(x,v),flash=roomOnline(v)&&roomNeedsErrorFlash(v)&&!printerAlertsDismissed(x.name);el.classList.toggle('has-printer-error',flash);el.classList.toggle('is-next',x.name===nextFree);el.classList.toggle('is-ready',roomOnline(v)&&!flash&&!['RUNNING','PREPARE','PAUSE'].includes(v.print_state)&&!attentionPending(x.name).length);el.querySelector('.room-feed').classList.toggle('is-printing',['RUNNING','PREPARE','PAUSE'].includes(v.print_state));el.querySelector('.room-job').innerHTML=c.job;el.querySelector('.room-progress i').style.width=c.pct+'%';el.querySelector('.room-cardbody').innerHTML=c.body;el.querySelector('.room-issue').hidden=!c.issue||printerAlertsDismissed(x.name);el.querySelector('.room-issue span').textContent=c.issue;
+ roomPreview(el.querySelector('.room-preview'),x.name,v);
  if(!ROOM_CAMERAS){el.querySelector('.room-camera-note').textContent='Camera paused';el.querySelector('.room-cam-empty').textContent='Camera paused';}else if(!roomOnline(v)&&!CAMERA_CACHE.get(`/api/p/${encodeURIComponent(x.name)}/api/cam.mjpg`)?.shown){el.querySelector('.room-camera-note').textContent='Waiting for printer';el.querySelector('.room-cam-empty').textContent='Camera returns when the printer connects';}
  wall.append(el);
  }
@@ -2816,7 +2840,7 @@ function renderCameraJob(){
  if(!D||PC_DATA_PRINTER!==P){panel.hidden=true;panel.replaceChildren();return;}
  const s=pcState(),connected=pcConnected();
  const jobActive=['RUNNING','PREPARE','PAUSE'].includes(D.print_state),paused=D.print_state==='PAUSE',jobDis=(!connected||s.inflight.has('print'))?'disabled':'';
- const job=jobActive?`<div class="pc-job"><div><div class="pc-jobtitle"><span>${!connected?'Last report · ':''}${paused?'Paused':D.print_state==='PREPARE'?'Preparing':'Printing'}</span><span class="pc-file" title="${pcEscape(D.print_name)}">${pcEscape(D.print_name||'Current print')}</span></div><div class="pc-progressline"><span>${D.print_pct!=null?pcEscape(D.print_pct)+'%':'—'}</span><div class="pc-progress" role="progressbar" aria-label="Print progress" aria-valuemin="0" aria-valuemax="100" ${D.print_pct!=null?'aria-valuenow="'+Number(D.print_pct)+'"':''}><i style="width:${Math.max(0,Math.min(100,Number(D.print_pct)||0))}%"></i></div><span>${D.print_left_min!=null?hm(D.print_left_min)+' left':''}${D.print_layer!=null?' · layer '+D.print_layer+'/'+(D.print_layers??'—'):''}</span></div></div><div class="pc-actions"><button class="pc-btn" ${jobDis} onclick="printCtl('${paused?'resume':'pause'}')">${pcIcon(paused?'play':'pause')}${paused?'Resume':'Pause'}</button><button class="pc-btn stop" ${jobDis} onclick="printCtl('stop')">Stop print</button></div></div>`:'';
+ const pv=roomInfo(P).preview,job=jobActive?`<div class="pc-job">${pv?.key?`<img class="pc-preview" src="${pcEscape(previewURL(P,pv))}" alt="Plate preview of ${pcEscape(D.print_name||'this print')}" onerror="this.remove()">`:''}<div><div class="pc-jobtitle"><span>${!connected?'Last report · ':''}${paused?'Paused':D.print_state==='PREPARE'?'Preparing':'Printing'}</span><span class="pc-file" title="${pcEscape(D.print_name)}">${pcEscape(D.print_name||'Current print')}</span></div><div class="pc-progressline"><span>${D.print_pct!=null?pcEscape(D.print_pct)+'%':'—'}</span><div class="pc-progress" role="progressbar" aria-label="Print progress" aria-valuemin="0" aria-valuemax="100" ${D.print_pct!=null?'aria-valuenow="'+Number(D.print_pct)+'"':''}><i style="width:${Math.max(0,Math.min(100,Number(D.print_pct)||0))}%"></i></div><span>${D.print_left_min!=null?hm(D.print_left_min)+' left':''}${D.print_layer!=null?' · layer '+D.print_layer+'/'+(D.print_layers??'—'):''}</span></div></div><div class="pc-actions"><button class="pc-btn" ${jobDis} onclick="printCtl('${paused?'resume':'pause'}')">${pcIcon(paused?'play':'pause')}${paused?'Resume':'Pause'}</button><button class="pc-btn stop" ${jobDis} onclick="printCtl('stop')">Stop print</button></div></div>`:'';
  panel.hidden=!jobActive;panel.innerHTML=job;
  layoutQueueMeasure();
 }
