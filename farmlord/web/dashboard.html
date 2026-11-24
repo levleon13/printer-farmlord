@@ -2459,7 +2459,7 @@ function presetDlg(){
   const pr=D.preheat||{}; const rows=Object.entries(pr).map(([k,v])=>`<div style="display:flex;gap:8px;align-items:center;margin:4px 0"><span style="flex:1">${pcEscape(k)} — bed ${v.bed}, chamber ${v.chamber||'off'}${v.nozzle!=null?', nozzle '+v.nozzle:''}</span><button onclick="delPreset('${pcEscape(k)}')">delete</button></div>`).join('');
   openDialog(`<h3 style="margin:0 0 10px">Preheat presets</h3>${rows||'<p class="meta">none yet</p>'}<hr style="border:0;border-top:1px solid #333;margin:12px 0">
   <label>New preset name</label><input name="name" placeholder="ASA">
-  <div style="display:flex;gap:10px"><div style="flex:1"><label>Bed °C</label><input name="bed" type="number" value="90" min="0" max="120"></div><div style="flex:1"><label>Chamber °C (0 = off, max 65)</label><input name="chamber" type="number" value="0" min="0" max="65"></div><div style="flex:1"><label>Nozzle °C (optional)</label><input name="nozzle" type="number" min="0" max="320"></div></div>`,
+  <div style="display:flex;gap:10px"><div style="flex:1"><label>Bed °C</label><input name="bed" type="number" value="90" min="0" max="120"></div><div style="flex:1"><label>Chamber °C (0 = off, max 65)</label><input name="chamber" type="number" value="0" min="0" max="65"></div><div style="flex:1"><label>Nozzle °C (optional)</label><input name="nozzle" type="number" min="0" max="350"></div></div>`,
   async fd=>{if(!fd.get('name'))return;const p=Object.assign({},D.preheat||{}),nozzle=fd.get('nozzle');p[fd.get('name')]={bed:+fd.get('bed'),chamber:+fd.get('chamber')};if(nozzle!=='')p[fd.get('name')].nozzle=+nozzle;await api('/api/preheat_presets',{presets:p});});
 }
 async function delPreset(k){const p=Object.assign({},D.preheat||{});delete p[k];await api('/api/preheat_presets',{presets:p});$('#dlg').close();load();}
@@ -2597,7 +2597,7 @@ function pcEditor(){
  const s=pcState(),panel=s.panel;if(!panel)return '';
  const e=D.env||{},locked=!pcConnected()||s.inflight.has('control'),dis=locked?'disabled':'';let title='',content='';
  if(panel.startsWith('temp:')){
-  const kind=panel.slice(5),labels={nozzle:'Active nozzle',bed:'Bed',chamber:'Chamber'},max={nozzle:320,bed:120,chamber:65}[kind];
+  const kind=panel.slice(5),labels={nozzle:'Active nozzle',bed:'Bed',chamber:'Chamber'},max={nozzle:350,bed:120,chamber:65}[kind];
   title=labels[kind]+' temperature';content=`${pcBusy()?'<div class="pc-alert">Changing this target affects the current print.</div>':''}<form onsubmit="event.preventDefault();pcApplyTemp('${kind}')"><div class="pc-editbody"><div><label class="pc-fieldlabel" for="pc-target">Target temperature · °C</label><div class="pc-inline"><input class="pc-input" id="pc-target" type="number" required min="0" max="${max}" step="1" value="${e[kind+'_target']??''}" placeholder="Set target" ${dis}><span class="pc-muted">0 = heater off${kind==='nozzle'&&pcBusy()?' (not allowed during a print)':''}</span></div></div><button type="submit" class="pc-btn primary" ${dis}>Apply target</button></div></form>`;
  }else if(panel==='prepare'){
   title='Preheat and cool-down';const reason=!pcConnected()?'Connect the printer to use preheat or cool-down.':pcBusy()?'Preheat presets and cool-down are locked during an active print.':null;

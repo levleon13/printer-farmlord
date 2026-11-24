@@ -305,7 +305,7 @@ def do_resolve(action):
 def do_temp(kind, value):
     """Set bed / chamber / nozzle directly."""
     st = jload(STATE, {})
-    lim = {"bed": 120, "chamber": 65, "nozzle": 320}
+    lim = {"bed": 120, "chamber": 65, "nozzle": 350}   # H2D/H2S nozzle rating: 350 °C
     if kind not in lim: return "unknown heater"
     v = max(0, min(lim[kind], int(value or 0)))
     printing = st.get("print_state") in ("RUNNING", "PREPARE", "PAUSE")
@@ -351,7 +351,7 @@ def _do_preheat(bed, chamber, label="", nozzle=None):
     st = jload(STATE, {})
     if st.get("print_state") in ("RUNNING", "PREPARE", "PAUSE"): return "printer is printing — not touching temperatures"
     bed = max(0, min(120, int(bed or 0))); chamber = max(0, min(65, int(chamber or 0)))
-    nozzle = None if nozzle is None else max(0, min(320, int(nozzle)))
+    nozzle = None if nozzle is None else max(0, min(350, int(nozzle)))
     g = f"M140 S{bed}\n" + (f"M141 S{chamber}\n" if chamber > 0 else "M141 S0\n")
     if nozzle is not None: g += f"M104 S{nozzle}\n"
     cooling = (bed == 0 and chamber == 0)
